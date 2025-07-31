@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Mac stuff
+.DS_Store
+
+# ignore large files in my data folder
+data/
