@@ -7,7 +7,7 @@ from pprint import pp
 
 # data paths
 S3_FOLDER = "mock_s3"
-OL_DATA = "data/openlibrary/ol_dump_2025-06-30/ol_dump_editions_2025-06-30.txt.gz"
+OL_DATA = "data/openlibrary/2025-06-30/2025-06-30.txt.gz"
 AMAZON_BOOK_DATA = "Books.jsonl"
 AMAZON_META_DATA = "meta_Books.jsonl"
 
@@ -24,7 +24,22 @@ OL Notes
 """
 
 
-def __check_ids(raw_json) -> dict:
+def _remove_folder(folder_path, recursed=False):
+    """Recursively delete a folder."""
+    names = os.listdir(folder_path)
+    for name in names:
+        path = folder_path + f"/{name}"
+        if os.path.isfile(path):
+            os.remove(path)
+        else:
+            _remove_folder(path, recursed=True)
+            os.rmdir(path)
+
+    if not recursed:
+        os.rmdir(folder_path)
+
+
+def _check_ids(raw_json) -> dict:
     """Extract matchable external IDs from edition, returning None if no IDs exist"""
     book = dict()
 
@@ -46,7 +61,7 @@ def __check_ids(raw_json) -> dict:
     return book if book else None
 
 
-def __parse_edition(line) -> tuple[str, dict]:
+def _parse_edition(line) -> tuple[str, dict]:
     """Parse a single line into edition key and data"""
 
     # preprocess line into dictionary
@@ -65,7 +80,7 @@ def __parse_edition(line) -> tuple[str, dict]:
         return None, None
 
     # check if book has ids, otherwise return None
-    book = __check_ids(raw_json)
+    book = _check_ids(raw_json)
     if not book:
         return None, None
 
@@ -89,7 +104,7 @@ def __parse_edition(line) -> tuple[str, dict]:
     return edition_key, book
 
 
-def __save_batch(batch_works, batch_work_ids, batch_count, n):
+def _save_batch(batch_works, batch_work_ids, batch_count, n):
     """Save one batch's works (grouped into files by first n characters) and work ids"""
     # make temporary directories if they don't exist
     os.makedirs(f"{S3_FOLDER}/temp_batches", exist_ok=True)
@@ -113,7 +128,7 @@ def __save_batch(batch_works, batch_work_ids, batch_count, n):
         json.dump(batch_work_ids, f)
 
 
-def __aggregate_batch(batch_editions, batch_work_ids):
+def _aggregate_batch(batch_editions, batch_work_ids):
     """Aggregate together the editions in one batch into a dictionary of works"""
     works = dict()
 
@@ -141,6 +156,62 @@ def __aggregate_batch(batch_editions, batch_work_ids):
     return works
 
 
+def _aggregate_batches():
+    """Aggregate temporary batches into corresponding folders"""
+
+    # aggregate work ids and save
+    work_ids = defaultdict(list)
+    for batch_filename in tqdm(
+        os.listdir(f"{S3_FOLDER}/temp_batches/work_ids"), desc="Aggregating work IDs"
+    ):
+        with open(f"{S3_FOLDER}/temp_batches/work_ids/{batch_filename}", "r") as f:
+            batch = json.load(f)
+            for work_id, editions_lst in batch.items():
+                work_ids[work_id] += editions_lst
+    with open(f"{S3_FOLDER}/work_ids.json", "w") as f:
+        json.dump(work_ids, f)
+
+    # aggregate works
+    for first_n_id in tqdm(
+        os.listdir(f"{S3_FOLDER}/temp_batches/works"), desc="Aggregating works"
+    ):
+        works_group = dict()
+        for batch_group_filename in os.listdir(
+            f"{S3_FOLDER}/temp_batches/works/{first_n_id}"
+        ):
+            with open(
+                f"{S3_FOLDER}/temp_batches/works/{first_n_id}/{batch_group_filename}",
+                "r",
+            ) as f:
+                batch_group = json.load(f)
+                for work_id, work_data in batch_group.items():
+                    if work_id not in works_group.keys():
+                        work_data["subjects"] = set(
+                            work_data.get("subjects", [])
+                        )  # convert subjects to set, empty set if doesn't exist
+                        works_group[work_id] = work_data
+
+                    else:
+                        work_keys = works_group[work_id].keys()
+                        for key, value in work_data.items():
+                            if key == "subjects":
+                                works_group[work_id]["subjects"].update(value)
+                            elif key not in work_keys:
+                                works_group[work_id][key] = value
+
+        # export group to json, converting subjects from set to list
+        works_group = {
+            work_id: {**data, "subjects": list(data.get("subjects", set()))}
+            for work_id, data in works_group.items()
+        }
+        os.makedirs(f"{S3_FOLDER}/works", exist_ok=True)
+        with open(f"{S3_FOLDER}/works/{first_n_id}.json", "w") as f:
+            json.dump(works_group, f)
+
+    # clear temporary batches
+    _remove_folder(f"{S3_FOLDER}/temp_batches")
+
+
 def process_in_batches(
     data_path=OL_DATA, batch_size=BATCH_SIZE, sample_size=SAMPLE_SIZE
 ):
@@ -156,7 +227,7 @@ def process_in_batches(
 
     with gzip.open(data_path, "rb") as f:
         for line in tqdm(f, desc="Processing editions"):
-            key, edition = __parse_edition(line)
+            key, edition = _parse_edition(line)
 
             if key and edition:
                 work_id = edition.pop("work_id")  # get and remove work id from edition
@@ -166,8 +237,8 @@ def process_in_batches(
 
                 if len(batch_editions) >= batch_size or total_processed == sample_size:
                     # aggregate into works and save
-                    batch_works = __aggregate_batch(batch_editions, batch_work_ids)
-                    __save_batch(
+                    batch_works = _aggregate_batch(batch_editions, batch_work_ids)
+                    _save_batch(
                         batch_works, batch_work_ids, batch_count, WORK_ID_FIRST_N
                     )
 
@@ -179,10 +250,11 @@ def process_in_batches(
 
                 # if processed the number we want, break
                 if total_processed == sample_size:
-                    print(f"Processed {total_processed} books in {batch_count} batches")
+                    print(
+                        f"\nProcessed {total_processed} books in {batch_count} batches\n"
+                    )
+                    _aggregate_batches()
                     break
-
-    pass
 
 
 def read_ol_data(self) -> tuple[dict, dict[list]]:
@@ -199,7 +271,7 @@ def read_ol_data(self) -> tuple[dict, dict[list]]:
         for line in tqdm(f):
 
             # check edition eligibility
-            key, edition = __parse_edition(line)
+            key, edition = _parse_edition(line)
             if key and edition:
 
                 # add full json to editions
@@ -297,3 +369,4 @@ def read_amazon_data(books=AMAZON_BOOK_DATA, meta=AMAZON_META_DATA):
 
 if __name__ == "__main__":
     process_in_batches()
+    # _aggregate_batches(0)
