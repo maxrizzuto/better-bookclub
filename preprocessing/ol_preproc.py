@@ -41,13 +41,13 @@ def _check_ids(raw_json) -> dict:
     """Extract matchable external IDs from edition, returning None if no IDs exist"""
     book = dict()
 
-    # check if json has goodreads and amazon id
-    external_ids = raw_json.get("identifiers")
-    if external_ids:
-        for id in ["goodreads", "amazon"]:
-            id_val = external_ids.get(id)
-            if id_val:
-                book[id] = id_val[0]
+    # # check if json has goodreads and amazon id
+    # external_ids = raw_json.get("identifiers")
+    # if external_ids:
+    #     for id in ["goodreads", "amazon"]:
+    #         id_val = external_ids.get(id)
+    #         if id_val:
+    #             book[id] = id_val[0]
 
     # check if json has isbn identifiers
     for isbn in ["isbn_10", "isbn_13"]:
@@ -107,6 +107,7 @@ def _save_batch(
 ):
     """Save one batch's works (grouped into files by first n characters) and work ids"""
     # make temporary directories if they don't exist
+    os.makedirs(f"{S3_FOLDER}", exist_ok=True)
     os.makedirs(f"{S3_FOLDER}/temp_batches", exist_ok=True)
     os.makedirs(f"{S3_FOLDER}/temp_batches/works", exist_ok=True)
     os.makedirs(f"{S3_FOLDER}/temp_batches/work_ids", exist_ok=True)
@@ -259,49 +260,65 @@ def process_in_batches(
     # define variable for tracking number of samples collected
     total_processed = 0
 
+    # define variable for whether or not aggregation has occurred
+    aggregated = False
+
     with gzip.open(data_path, "rb") as f:
-        for line in tqdm(f, desc="Processing editions"):
-            key, edition = _parse_edition(line)
+        with tqdm(f, desc="Procesing editions") as t:
+            for line in t:
+                key, edition = _parse_edition(line)
 
-            if key and edition:
-                work_id = edition.pop("work_id")  # get and remove work id from edition
-                batch_editions[key] = edition
-                batch_work_ids[work_id].append(key)
-                isbn_10 = edition.get("isbn_10")
-                isbn_13 = edition.get("isbn_10")
-                if isbn_10:
-                    batch_isbn10[isbn_10] = work_id
-                if isbn_13:
-                    batch_isbn13[isbn_13] = work_id
-                total_processed += 1
+                if key and edition:
+                    work_id = edition.pop(
+                        "work_id"
+                    )  # get and remove work id from edition
+                    batch_editions[key] = edition
+                    batch_work_ids[work_id].append(key)
+                    isbn_10 = edition.get("isbn_10")
+                    isbn_13 = edition.get("isbn_10")
+                    if isbn_10:
+                        batch_isbn10[isbn_10] = work_id
+                    if isbn_13:
+                        batch_isbn13[isbn_13] = work_id
+                    total_processed += 1
+                    if total_processed % 10000 == 0:
+                        t.set_postfix(total_processed=total_processed)
 
-                if len(batch_editions) >= batch_size or total_processed == sample_size:
-                    # aggregate into works and save
-                    batch_works = _aggregate_batch(batch_editions, batch_work_ids)
-                    _save_batch(
-                        batch_works,
-                        batch_work_ids,
-                        batch_isbn10,
-                        batch_isbn13,
-                        batch_count,
-                        WORK_ID_FIRST_N,
-                    )
+                    if (
+                        len(batch_editions) >= batch_size
+                        or total_processed == sample_size
+                    ):
+                        # aggregate into works and save
+                        batch_works = _aggregate_batch(batch_editions, batch_work_ids)
+                        _save_batch(
+                            batch_works,
+                            batch_work_ids,
+                            batch_isbn10,
+                            batch_isbn13,
+                            batch_count,
+                            WORK_ID_FIRST_N,
+                        )
 
-                    # reset batch
-                    batch_editions.clear()
-                    batch_work_ids.clear()
-                    batch_works.clear()
-                    batch_isbn10.clear()
-                    batch_isbn13.clear()
-                    batch_count += 1
+                        # reset batch
+                        batch_editions.clear()
+                        batch_work_ids.clear()
+                        batch_works.clear()
+                        batch_isbn10.clear()
+                        batch_isbn13.clear()
+                        batch_count += 1
 
-                # if processed the number we want, break
-                if total_processed == sample_size:
-                    print(
-                        f"\nProcessed {total_processed} books in {batch_count} batches\n"
-                    )
-                    _aggregate_batches()
-                    break
+                    # if processed the number we want, break
+                    if total_processed == sample_size:
+                        print(
+                            f"\nProcessed {total_processed} books in {batch_count} batches\n"
+                        )
+                        _aggregate_batches()
+                        aggregated = True
+                        break
+
+    # aggregate batches in case sample size isn't reached
+    if not aggregated:
+        _aggregate_batches()
 
 
 if __name__ == "__main__":
