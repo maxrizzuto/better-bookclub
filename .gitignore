@@ -211,3 +211,4 @@ __marimo__/
 
 # ignore large files in my data folder
 data/
+mock_s3/
