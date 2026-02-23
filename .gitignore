@@ -213,7 +213,6 @@ __marimo__/
 
 # ignore large files in my data folder
 data/
-mock_s3/
 docs/ratings.png
 preds*
 goodreads_export.csv
