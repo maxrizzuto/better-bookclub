@@ -208,7 +208,13 @@ __marimo__/
 
 # Mac stuff
 .DS_Store
+.vscode
+.env
 
 # ignore large files in my data folder
 data/
 mock_s3/
+docs/ratings.png
+preds*
+goodreads_export.csv
+.vscode/settings.json

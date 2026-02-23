@@ -18,10 +18,7 @@ I'll have some documentation below that outlines my decision-making processes, h
 
 #### Training
 
-1. Impute **missing ratings** using Neural Collaborative Filtering. Use content-based data for input to address potential cold start problem
-    1. ReLU activation functions for hidden layers
-    2. Tower pattern layers (halve number of neurons between each layer)
-    3. Use book data for item input (e.g. genre, metadata, description embedding)
+1. Train a model using EASE (embarassingly shallow autoencoder). 
 2. Use a **preference aggregation** strategy to make predictions for a group (Copeland score?)
 
 #### Testing
