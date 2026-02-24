@@ -9,7 +9,7 @@ def sample_books(
     max_reviews: int = 1000000,
     int_path: str = "data/goodreads/goodreads_interactions.csv",
     books_path: str = BOOKS_PATH,
-):
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     int_df = pl.read_csv(int_path)
     int_df = int_df.filter((pl.col("is_read") == 1) & (pl.col("rating") >= 4))
     books_df = pl.read_csv(books_path)
@@ -26,15 +26,13 @@ def sample_books(
         (pl.col("ratings_count") > min_reviews)
         & (pl.col("ratings_count") < max_reviews)
     )
-    books_df.write_csv(f"data/goodreads/goodreads_books_{n_samples}_{min_reviews}.csv")
 
-    books_df = books_df.select(["book_id", "isbn13"])
-
-    int_df = int_df.join(books_df, on="book_id", how="right")
-    int_df = int_df.sample(n_samples)
-    int_df.write_csv(
-        f"data/goodreads/goodreads_interactions_{n_samples}_{min_reviews}.csv"
+    int_df = int_df.join(
+        books_df.select(["book_id", "isbn13"]), on="book_id", how="right"
     )
+    int_df = int_df.sample(n_samples)
+    return (books_df, int_df)
 
 
-sample_books(300000, 200)
+if __name__ == "__main__":
+    sample_books(300000, 200)
