@@ -5,18 +5,19 @@ import logging
 import sys
 import os
 import warnings
+import numpy as np
 from cleaning import sample_books
 
 warnings.filterwarnings("ignore", ".*Sparse CSR tensor support is in beta state.*")
 
 # users who reviewed >= 20 books, all of which have at least 50 reviews
-TRAINED = False
+TRAINED = True
 L2_LAMBDA = 1000
 NUM_SAMPLES = 300000
 MIN_REVIEWS = 200
 GOODREADS_PATH = "storygraph.csv"
 BOOKS_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/goodreads_books_{NUM_SAMPLES}_{MIN_REVIEWS}.parquet"
-B_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.pt"
+B_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
 EXPORT_ID_COL = "ISBN/UID"
 
 
@@ -76,9 +77,7 @@ class TorchEASE:
                 self.item_lookup = pl.read_parquet(self.path + "item_lookup.parquet")
                 self.indices = torch.load(self.path + "indices.pt")
                 self.values = torch.load(self.path + "values.pt")
-                self.logger.info("Files loaded, loading B matrix")
-                self._load_B()
-                self.logger.info("B matrix loaded")
+                self.logger.info("Files loaded")
                 self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
             except FileNotFoundError:
                 self.logger.error("File couldn't be found: check training")
@@ -183,15 +182,10 @@ class TorchEASE:
         self.logger.info("Building B Matrix")
         B = P / (-1 * P.diag())
         B = B.fill_diagonal_(0)
-        self.B = B
 
         if export:
-            torch.save(B, self.path + f"B{self.num_samples}.pt")
+            np.save(f"{self.path}/B{self.num_samples}.npy", B.numpy())
 
-        return
-
-    def _load_B(self):
-        self.B = torch.load(self.path + f"B{NUM_SAMPLES}.pt")
         return
 
     def pred(
@@ -214,16 +208,30 @@ class TorchEASE:
         )
 
         # create one-hot vector
-        gr_vector = torch.zeros((1, len(self.item_lookup)))
+        gr_vector = np.zeros((1, len(self.item_lookup)))
         gr_vector[:, interacted_books] = 1
+        shape = len(self.item_lookup)
 
         self.logger.info("Generating predictions")
         try:
-            preds = torch.mm(gr_vector, self.B)
+            B = np.memmap(
+                self.path + f"B{self.num_samples}.npy",
+                dtype="float32",
+                mode="r",
+                shape=(shape, shape),
+                offset=128,
+            )
+            preds = np.zeros((1, shape))
+            for i in range(0, B.shape[0], 1000):
+                chunk = B[:, i : i + 1000]
+                result = np.dot(gr_vector, chunk)
+                preds[:, i : i + 1000] = result
+
         except AttributeError:
             self.logger.error("B matrix not found: fit model or load matrix")
             return
 
+        preds = torch.from_numpy(preds)
         top_n_idx = torch.argsort(preds, descending=True)[0][:n]
         pred_vals = preds[:, top_n_idx]
         top_n_ids = [
