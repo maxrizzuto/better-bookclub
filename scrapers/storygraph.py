@@ -17,7 +17,7 @@ class StorygraphScraper:
         if cookie:
             driver.add_cookie({"name": "remember_user_token", "value": cookie})
         driver.refresh()
-        SCROLL_PAUSE_TIME = 2
+        SCROLL_PAUSE_TIME = 5
         last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -46,7 +46,7 @@ class StorygraphScraper:
         return StorygraphScraper.fetch_url(url, cookie)
 
 
-class StorygraphParser:
+class Storygraph:
     @staticmethod
     def parse_html(html):
         soup = BeautifulSoup(html, "html.parser")
@@ -76,31 +76,14 @@ class StorygraphParser:
     @staticmethod
     def currently_reading(uname, cookie):
         content = StorygraphScraper.currently_reading(uname, cookie)
-        return StorygraphParser.parse_html(content)
+        return Storygraph.parse_html(content)
 
     @staticmethod
     def to_read(uname, cookie):
         content = StorygraphScraper.to_read(uname, cookie)
-        return StorygraphParser.parse_html(content)
+        return Storygraph.parse_html(content)
 
     @staticmethod
     def books_read(uname, cookie):
         content = StorygraphScraper.books_read(uname, cookie)
-        return StorygraphParser.parse_html(content)
-
-
-class Storygraph:
-    @staticmethod
-    def currently_reading(uname, cookie):
-        data = StorygraphParser.currently_reading(uname, cookie)
-        return json.dumps(data, indent=4)
-
-    @staticmethod
-    def to_read(uname, cookie):
-        data = StorygraphParser.to_read(uname, cookie)
-        return json.dumps(data, indent=4)
-
-    @staticmethod
-    def books_read(uname, cookie):
-        data = StorygraphParser.books_read(uname, cookie)
-        return json.dumps(data, indent=4)
+        return Storygraph.parse_html(content)

@@ -7,18 +7,20 @@ import os
 import warnings
 import numpy as np
 from cleaning import sample_books
+from scrapers.storygraph import Storygraph
 
 warnings.filterwarnings("ignore", ".*Sparse CSR tensor support is in beta state.*")
 
 # users who reviewed >= 20 books, all of which have at least 50 reviews
 TRAINED = True
-L2_LAMBDA = 1000
+L2_LAMBDA = 500
 NUM_SAMPLES = 300000
 MIN_REVIEWS = 200
 GOODREADS_PATH = "storygraph.csv"
 BOOKS_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/goodreads_books_{NUM_SAMPLES}_{MIN_REVIEWS}.parquet"
 B_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
 EXPORT_ID_COL = "ISBN/UID"
+UNAMES = ["mrizzuto", "itsroryo"]
 
 
 class TorchEASE:
@@ -188,12 +190,30 @@ class TorchEASE:
 
         return
 
+    def pred_df_from_uname(self, uname, books_df):
+        cookie = os.getenv("COOKIE")
+        self.logger.info("Fetching currently reading...")
+        current = Storygraph.currently_reading(uname, cookie=cookie)
+        self.logger.info("Fetching to read...")
+        to_read = Storygraph.to_read(uname, cookie=cookie)
+        self.logger.info("Fetching books read...")
+        read = Storygraph.books_read(uname, cookie=cookie)
+
+        books = current + to_read + read
+
+        user_df = pl.from_records(books).unique("isbn")
+        user_df.write_parquet(f"preds/users/{uname}.parquet")
+        pred_df = model.pred(user_df, books_df, "isbn", n=None)
+        pred_df.write_parquet(f"preds/users/{uname}_preds.parquet")
+
+        return pred_df
+
     def pred(
         self,
         pred_df: pl.DataFrame,
         books_df: pl.DataFrame,
         id_col: str,
-        n: int = 20,
+        n: None | int = 20,
     ):
         """
         Take in goodreads dataframe with interacted books, return top 20
@@ -232,7 +252,9 @@ class TorchEASE:
             return
 
         preds = torch.from_numpy(preds)
-        top_n_idx = torch.argsort(preds, descending=True)[0][:n]
+        top_n_idx = torch.argsort(preds, descending=True)[0]
+        if n:
+            top_n_idx = top_n_idx[:n]
         pred_vals = preds[:, top_n_idx]
         top_n_ids = [
             model.item_lookup.filter(pl.col(self.item_id_col) == x.item())[
@@ -252,6 +274,41 @@ class TorchEASE:
 
         return books_df
 
+    def group_preds(self, unames: list, books_df: pl.DataFrame):
+        pred_df = None
+        unames = unames.sort()
+        for uname in unames:
+            self.logger.info(f"Getting {uname} predictions.")
+            if os.path.exists(f"preds/users/{uname}_preds.parquet"):
+                user_df = pl.read_parquet(f"preds/users/{uname}_preds.parquet")
+            elif os.path.exists(f"preds/users/{uname}.parquet"):
+                user_df = pl.read_parquet(f"preds/users/{uname}.parquet")
+                user_df = self.pred(user_df, books_df, "isbn", n=None)
+                user_df.write_parquet(f"preds/users/{uname}_preds.parquet")
+            else:
+                user_df = self.pred_df_from_uname(uname, books_df)
+
+            if pred_df is not None:
+                other_cols = [
+                    col for col in user_df.columns if col not in ("preds", "isbn")
+                ]
+                pred_df = (
+                    pl.concat([pred_df, user_df], how="diagonal_relaxed")
+                    .group_by("isbn")
+                    .agg(
+                        preds=pl.col("preds").product(),
+                        *[pl.col(c).first() for c in other_cols],
+                    )
+                )
+            else:
+                pred_df = user_df
+
+        pred_df = pred_df.sort("preds", descending=True)
+        print(pred_df[:20])
+        pred_df.write_parquet(f"preds/groups/{'_'.join(unames)}.parquet")
+
+        return pred_df
+
 
 if __name__ == "__main__":
 
@@ -267,8 +324,11 @@ if __name__ == "__main__":
         model.fit()
 
     # predict
-    gr_df = pl.read_csv(GOODREADS_PATH)
     books_df = pl.read_parquet(BOOKS_PATH)
-    preds_df = model.pred(gr_df, books_df, id_col=EXPORT_ID_COL)
-    print(preds_df)
-    preds_df.write_csv(f"preds/preds_{L2_LAMBDA}l_{NUM_SAMPLES}.csv")
+    model.group_preds(UNAMES, books_df)
+
+    # max_df = model.pred_df_from_uname("mrizzuto")
+    # preds_df = model.pred(max_df, books_df, id_col="isbn")
+
+    # print(preds_df)
+    # preds_df.write_csv(f"preds/preds_{L2_LAMBDA}l_{NUM_SAMPLES}.csv")
