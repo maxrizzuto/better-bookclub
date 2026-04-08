@@ -1,37 +1,45 @@
 # try to make sparse matrix lmao
+import logging
+import os
+import sys
+import warnings
+from pathlib import Path
+
+import numpy as np
 import polars as pl
 import torch
-import logging
-import sys
-import os
-import warnings
-import numpy as np
-from cleaning import sample_books
-from scrapers.storygraph import Storygraph
+
+from .cleaning import sample_books
+from .scrapers.storygraph import Storygraph
 
 warnings.filterwarnings("ignore", ".*Sparse CSR tensor support is in beta state.*")
 
 # users who reviewed >= 20 books, all of which have at least 50 reviews
+BASE_DIR = Path(__file__).parent
 TRAINED = True
 L2_LAMBDA = 500
 NUM_SAMPLES = 300000
 MIN_REVIEWS = 200
-GOODREADS_PATH = "storygraph.csv"
-BOOKS_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/goodreads_books_{NUM_SAMPLES}_{MIN_REVIEWS}.parquet"
-B_PATH = f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
+GOODREADS_PATH = BASE_DIR / "storygraph.csv"
+B_PATH = BASE_DIR / f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
 EXPORT_ID_COL = "ISBN/UID"
 UNAMES = ["mrizzuto", "itsroryo"]
 
+ITEM_COL = "isbn13"
+USER_COL = "user_id"
 
+
+# [TODO] update parameters
 class TorchEASE:
     def __init__(
         self,
-        trained: bool,
-        num_samples: int,
-        min_reviews: int,
-        item_col: str,
-        user_col: str,
-        **kwargs,
+        trained: bool = TRAINED,
+        num_samples: int = NUM_SAMPLES,
+        min_reviews: int = MIN_REVIEWS,
+        item_col: str = ITEM_COL,
+        user_col: str = USER_COL,
+        l2_reg: int = L2_LAMBDA,
+        score_col: str | None = None,
     ):
         """
         Class for EASE models built in PyTorch.
@@ -70,15 +78,20 @@ class TorchEASE:
         self.user_col = user_col
         self.item_id_col = self.item_col + "_id"
         self.user_id_col = self.user_col + "_id"
-        self.path = f"data/train/{self.num_samples}_{self.min_reviews}/"
+        self.path = BASE_DIR / f"data/train/{self.num_samples}_{self.min_reviews}/"
+        self.books_path = (
+            self.path / f"goodreads_books_{self.num_samples}_{self.min_reviews}.parquet"
+        )
+        self.l2_reg = l2_reg
+        self.score_col = score_col
 
         if trained:
             try:
                 self.logger.info("Loading files")
-                self.user_lookup = pl.read_parquet(self.path + "user_lookup.parquet")
-                self.item_lookup = pl.read_parquet(self.path + "item_lookup.parquet")
-                self.indices = torch.load(self.path + "indices.pt")
-                self.values = torch.load(self.path + "values.pt")
+                self.user_lookup = pl.read_parquet(self.path / "user_lookup.parquet")
+                self.item_lookup = pl.read_parquet(self.path / "item_lookup.parquet")
+                self.indices = torch.load(self.path / "indices.pt")
+                self.values = torch.load(self.path / "values.pt")
                 self.logger.info("Files loaded")
                 self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
             except FileNotFoundError:
@@ -86,30 +99,15 @@ class TorchEASE:
                 raise
 
         else:
-            os.makedirs(
-                f"data/train/{self.num_samples}_{self.min_reviews}", exist_ok=True
-            )
-            try:
-                self.l2_reg = kwargs.get("l2_reg")
-                if not self.l2_reg:
-                    raise ValueError(
-                        "Kwarg missing: L2 hyperparameter. Pass in with name l2_reg."
-                    )
-
-            except ValueError as e:
-                self.logger.error(e)
-                raise
+            os.makedirs(self.path, exist_ok=True)
 
             try:
                 train_df = pl.read_parquet(
                     self.path
-                    + f"goodreads_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+                    / f"goodreads_interactions_{self.num_samples}_{self.min_reviews}.parquet"
                 )
 
-                if not os.path.isfile(
-                    self.path
-                    + f"goodreads_books_{self.num_samples}_{self.min_reviews}.parquet"
-                ):
+                if not os.path.isfile(self.books_path):
                     raise FileNotFoundError
 
             except FileNotFoundError:
@@ -117,12 +115,9 @@ class TorchEASE:
                 books_df, train_df = sample_books(self.num_samples, self.min_reviews)
                 train_df.write_parquet(
                     self.path
-                    + f"goodreads_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+                    / f"goodreads_interactions_{self.num_samples}_{self.min_reviews}.parquet"
                 )
-                books_df.write_parquet(
-                    self.path
-                    + f"goodreads_books_{self.num_samples}_{self.min_reviews}.parquet"
-                )
+                books_df.write_parquet(self.books_path)
                 del books_df
 
                 self.logger.info("Training dataframe created and saved.")
@@ -143,7 +138,6 @@ class TorchEASE:
                 train_df[[self.user_id_col, self.item_id_col]].rows()
             )
 
-            self.score_col = kwargs.get("score_col")
             if self.score_col:
                 self.values = torch.FloatTensor(train_df[self.score_col])
 
@@ -157,11 +151,12 @@ class TorchEASE:
             self.logger.info("Sparse data built")
 
             # save all relevant data
-            self.user_lookup.write_parquet(self.path + "user_lookup.parquet")
-            self.item_lookup.write_parquet(self.path + "item_lookup.parquet")
-            torch.save(self.indices, self.path + "indices.pt")
-            torch.save(self.values, self.path + "values.pt")
+            self.user_lookup.write_parquet(self.path / "user_lookup.parquet")
+            self.item_lookup.write_parquet(self.path / "item_lookup.parquet")
+            torch.save(self.indices, self.path / "indices.pt")
+            torch.save(self.values, self.path / "values.pt")
             self.logger.info("Data saved")
+            self.fit()
 
     def generate_labels(self, df, col):
         dist_labels = df.unique([col], maintain_order=True)[[col]]
@@ -190,34 +185,45 @@ class TorchEASE:
 
         return
 
-    def pred_df_from_uname(self, uname, books_df):
-        cookie = os.getenv("COOKIE")
-        self.logger.info("Fetching currently reading...")
-        current = Storygraph.currently_reading(uname, cookie=cookie)
-        self.logger.info("Fetching to read...")
-        to_read = Storygraph.to_read(uname, cookie=cookie)
-        self.logger.info("Fetching books read...")
-        read = Storygraph.books_read(uname, cookie=cookie)
+    def get_user_books(self, uname) -> pl.DataFrame:
+        user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
+        if os.path.exists(user_book_path):
+            user_df = pl.read_parquet(user_book_path)
+            return user_df
+        else:
+            cookie = os.getenv("COOKIE")
+            self.logger.info("Fetching currently reading...")
+            current = Storygraph.currently_reading(uname, cookie=cookie)
+            self.logger.info("Fetching to read...")
+            to_read = Storygraph.to_read(uname, cookie=cookie)
+            self.logger.info("Fetching books read...")
+            read = Storygraph.books_read(uname, cookie=cookie)
 
-        books = current + to_read + read
+            books = current + to_read + read
 
-        user_df = pl.from_records(books).unique("isbn")
-        user_df.write_parquet(f"preds/users/{uname}.parquet")
-        pred_df = model.pred(user_df, books_df, "isbn", n=None)
-        pred_df.write_parquet(f"preds/users/{uname}_preds.parquet")
+            user_df = pl.from_records(books).unique("isbn")
+            user_df.write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
+
+            return user_df
+
+    def pred_df_from_uname(self, uname):
+        user_df = self.get_user_books(uname)
+        pred_df = model.pred(user_df, "isbn", n=None)
+        pred_df.write_parquet(BASE_DIR / f"preds/users/{uname}_preds.parquet")
 
         return pred_df
 
     def pred(
         self,
         pred_df: pl.DataFrame,
-        books_df: pl.DataFrame,
         id_col: str,
         n: None | int = 20,
-    ):
+    ) -> pl.DataFrame:
         """
         Take in goodreads dataframe with interacted books, return top 20
         """
+        books_df = pl.read_parquet(self.books_path)
+
         interacted_books = (
             pred_df.with_columns(pl.col(id_col).str.strip_chars('"="'))
             .join(self.item_lookup, left_on=id_col, right_on=self.item_col, how="left")[
@@ -235,7 +241,7 @@ class TorchEASE:
         self.logger.info("Generating predictions")
         try:
             B = np.memmap(
-                self.path + f"B{self.num_samples}.npy",
+                self.path / f"B{self.num_samples}.npy",
                 dtype="float32",
                 mode="r",
                 shape=(shape, shape),
@@ -248,8 +254,8 @@ class TorchEASE:
                 preds[:, i : i + 1000] = result
 
         except AttributeError:
-            self.logger.error("B matrix not found: fit model or load matrix")
-            return
+            self.logger.exception("B matrix not found: fit model or load matrix")
+            raise
 
         preds = torch.from_numpy(preds)
         top_n_idx = torch.argsort(preds, descending=True)[0]
@@ -274,21 +280,23 @@ class TorchEASE:
 
         return books_df
 
-    def group_preds(self, unames: list, books_df: pl.DataFrame):
-        pred_df = None
-        unames = unames.sort()
+    def group_preds(self, unames: list[str]) -> pl.DataFrame:
+        pred_df = pl.DataFrame()
+        unames.sort()
         for uname in unames:
             self.logger.info(f"Getting {uname} predictions.")
-            if os.path.exists(f"preds/users/{uname}_preds.parquet"):
-                user_df = pl.read_parquet(f"preds/users/{uname}_preds.parquet")
-            elif os.path.exists(f"preds/users/{uname}.parquet"):
-                user_df = pl.read_parquet(f"preds/users/{uname}.parquet")
-                user_df = self.pred(user_df, books_df, "isbn", n=None)
-                user_df.write_parquet(f"preds/users/{uname}_preds.parquet")
+            if os.path.exists(BASE_DIR / f"preds/users/{uname}_preds.parquet"):
+                user_df = pl.read_parquet(
+                    BASE_DIR / f"preds/users/{uname}_preds.parquet"
+                )
+            elif os.path.exists(BASE_DIR / f"preds/users/{uname}.parquet"):
+                user_df = pl.read_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
+                user_df = self.pred(user_df, "isbn", n=None)
+                user_df.write_parquet(BASE_DIR / f"preds/users/{uname}_preds.parquet")
             else:
-                user_df = self.pred_df_from_uname(uname, books_df)
+                user_df = self.pred_df_from_uname(uname)
 
-            if pred_df is not None:
+            if len(pred_df) > 0:
                 other_cols = [
                     col for col in user_df.columns if col not in ("preds", "isbn")
                 ]
@@ -305,13 +313,12 @@ class TorchEASE:
 
         pred_df = pred_df.sort("preds", descending=True)
         print(pred_df[:20])
-        pred_df.write_parquet(f"preds/groups/{'_'.join(unames)}.parquet")
+        pred_df.write_parquet(BASE_DIR / f"preds/groups/{'_'.join(unames)}.parquet")
 
         return pred_df
 
 
 if __name__ == "__main__":
-
     model = TorchEASE(
         trained=TRAINED,
         num_samples=NUM_SAMPLES,
@@ -320,12 +327,9 @@ if __name__ == "__main__":
         user_col="user_id",
         l2_reg=L2_LAMBDA,
     )
-    if not TRAINED:
-        model.fit()
 
     # predict
-    books_df = pl.read_parquet(BOOKS_PATH)
-    model.group_preds(UNAMES, books_df)
+    model.group_preds(UNAMES)
 
     # max_df = model.pred_df_from_uname("mrizzuto")
     # preds_df = model.pred(max_df, books_df, id_col="isbn")

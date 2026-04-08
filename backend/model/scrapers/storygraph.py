@@ -1,9 +1,8 @@
+import time
+
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
-import time
-import re
-import json
 
 
 class StorygraphScraper:
@@ -51,23 +50,33 @@ class Storygraph:
     def parse_html(html):
         soup = BeautifulSoup(html, "html.parser")
         books_list = list()
-        # books = soup.find_all("div", class_="book-title-author-and-series")
+
+        if soup.find(string="Sorry, that page doesn't exist!"):
+            raise ValueError("Username not found. Please try a different username.")
+
         p_elements = [
             x.parent
             for x in soup.select("div[class*='hidden edition-info mt-3'] p span")
-            if "ISBN" in x.text
+            if "ISBN" in x.text and x.parent
         ]
+
         books = [
             x.parent.parent.select("div[class*='book-title-author-and-series']")[0]
             for x in p_elements
+            if x.parent and x.parent.parent
         ]
         isbns = [x.text.split(" ")[-1].strip() for x in p_elements]
 
         for idx in range(len(books)):
             book = books[idx]
             isbn = isbns[idx].strip()
-            title = book.find("a").text.strip()
-            storygraph_id = book.find("a")["href"].split("/")[-1]
+            title = book.find("a")
+            if title:
+                title = title.text.strip()
+
+            storygraph_id = book.find("a")
+            if storygraph_id:
+                storygraph_id = str(storygraph_id["href"]).split("/")[-1]
             books_list.append(
                 {"title": title, "storygraph_id": storygraph_id, "isbn": isbn}
             )

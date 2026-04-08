@@ -1,5 +1,19 @@
 {
 	"/": [
 		"src/routes/+page.server.ts"
+	],
+	"/api/books": [
+		"src/routes/api/books/+server.ts"
+	],
+	"/api/recommendations/status": [
+		"src/routes/api/recommendations/status/+server.ts"
+	],
+	"/loading": [
+		"src/routes/loading/+page.ts",
+		"src/routes/loading/+page.server.ts"
+	],
+	"/results": [],
+	"/users": [
+		"src/routes/users/+page.server.ts"
 	]
 }

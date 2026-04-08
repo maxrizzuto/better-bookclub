@@ -1,9 +1,12 @@
-import type { Actions } from '@sveltejs/kit';
+import { redirect, type Actions } from '@sveltejs/kit';
 
 export const actions = {
-	getRecs: async ({ request }) => {
+	default: async ({ request }) => {
+		// [TODO] actually call backend, start streaming data
 		const data = await request.formData();
-		// call backend
+
+		// redirect to loading page while data is fetched
+		redirect(303, '/users');
 		return { success: true };
 	}
 } satisfies Actions;
