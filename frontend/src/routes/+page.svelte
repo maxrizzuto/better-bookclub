@@ -30,6 +30,12 @@
 			addUser();
 		}
 	}
+
+	function checkSubmit(e: Event) {
+		if (users.length < 2) {
+			e.preventDefault();
+		}
+	}
 </script>
 
 <div id="page-container">
@@ -47,7 +53,18 @@
 					onkeydown={handleEnter}
 				/>
 				<button type="button" id="addUser" onclick={addUser}>+</button>
-				<button type="submit" id="submit">Submit</button>
+				<div class="submit-button">
+					{#if users.length < 2}
+						<button type="submit" id="submit" class="unsubmittable" onclick={checkSubmit}
+							>Submit</button
+						>
+						<span class="tooltip">Must add at least 2 users to submit</span>
+					{:else}
+						<button type="submit" id="submit" class="submittable" onclick={checkSubmit}
+							>Submit</button
+						>
+					{/if}
+				</div>
 			</div>
 			<div id="inputError"></div>
 			<div id="users">
@@ -177,10 +194,29 @@
 		margin-left: 5px;
 		background-color: white;
 		border: 1px solid lightslategray;
-		transition: 200ms ease-in-out;
 	}
 
-	#submit:hover {
+	#submit.unsubmittable {
+		background-color: lightgray;
+		color: gray;
+	}
+
+	.tooltip {
+		font-size: 0.9em;
+		transition: 200ms ease-in-out;
+		visibility: hidden;
+	}
+
+	#submit.unsubmittable:hover + .tooltip {
+		visibility: visible;
+	}
+
+	#submit.submittable {
+		transition: 200ms ease-in-out;
+		cursor: pointer;
+	}
+
+	#submit.submittable:hover {
 		background-color: darkseagreen;
 	}
 
