@@ -10,7 +10,7 @@ class StorygraphScraper:
     def fetch_url(url, cookie):
         options = Options()
         options.add_argument("--headless")
-        driver = webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(options=options)  # pyright: ignore[reportCallIssue]
         driver.get(url)
 
         if cookie:
