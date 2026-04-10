@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import FastAPI, Query
+from model.scrapers.storygraph import Storygraph
 from model.torchEASE import TorchEASE
 
 app = FastAPI()
@@ -20,10 +21,9 @@ async def books(
 ):
     if user:
         dct = dict()
-        model = TorchEASE()
         for username in user:
-            user_df = model.get_user_books(username)
-            dct[username] = user_df.to_dicts()
+            user_books = Storygraph.get_user_books(username)
+            dct[username] = user_books
         return dct
 
     else:

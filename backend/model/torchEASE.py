@@ -191,13 +191,12 @@ class TorchEASE:
             user_df = pl.read_parquet(user_book_path)
             return user_df
         else:
-            cookie = os.getenv("COOKIE")
             self.logger.info("Fetching currently reading...")
-            current = Storygraph.currently_reading(uname, cookie=cookie)
+            current = Storygraph.currently_reading(uname)
             self.logger.info("Fetching to read...")
-            to_read = Storygraph.to_read(uname, cookie=cookie)
+            to_read = Storygraph.to_read(uname)
             self.logger.info("Fetching books read...")
-            read = Storygraph.books_read(uname, cookie=cookie)
+            read = Storygraph.books_read(uname)
 
             books = current + to_read + read
 

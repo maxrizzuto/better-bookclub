@@ -1,13 +1,21 @@
+import logging
+import os
 import time
+from pathlib import Path
 
+import polars as pl
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
+COOKIE = os.getenv("COOKIE")
+LOGGER = logging.getLogger()
+BASE_DIR = Path(__file__).parent.parent
+
 
 class StorygraphScraper:
     @staticmethod
-    def fetch_url(url, cookie):
+    def fetch_url(url, cookie=COOKIE):
         options = Options()
         options.add_argument("--headless")
         driver = webdriver.Chrome(options=options)  # pyright: ignore[reportCallIssue]
@@ -30,24 +38,24 @@ class StorygraphScraper:
         return html_content
 
     @staticmethod
-    def currently_reading(uname, cookie):
+    def currently_reading(uname, cookie=COOKIE):
         url = f"https://app.thestorygraph.com/currently-reading/{uname}"
         return StorygraphScraper.fetch_url(url, cookie)
 
     @staticmethod
-    def to_read(uname, cookie):
+    def to_read(uname, cookie=COOKIE):
         url = f"https://app.thestorygraph.com/to-read/{uname}"
         return StorygraphScraper.fetch_url(url, cookie)
 
     @staticmethod
-    def books_read(uname, cookie):
+    def books_read(uname, cookie=COOKIE):
         url = f"https://app.thestorygraph.com/books-read/{uname}"
         return StorygraphScraper.fetch_url(url, cookie)
 
 
 class Storygraph:
     @staticmethod
-    def parse_html(html):
+    def parse_html(html, shelf):
         soup = BeautifulSoup(html, "html.parser")
         books_list = list()
 
@@ -78,21 +86,45 @@ class Storygraph:
             if storygraph_id:
                 storygraph_id = str(storygraph_id["href"]).split("/")[-1]
             books_list.append(
-                {"title": title, "storygraph_id": storygraph_id, "isbn": isbn}
+                {
+                    "title": title,
+                    "storygraph_id": storygraph_id,
+                    "isbn": isbn,
+                    "shelf": shelf,
+                }
             )
         return books_list
 
     @staticmethod
-    def currently_reading(uname, cookie):
+    def currently_reading(uname, cookie=COOKIE):
         content = StorygraphScraper.currently_reading(uname, cookie)
-        return Storygraph.parse_html(content)
+        return Storygraph.parse_html(content, "Currently reading")
 
     @staticmethod
-    def to_read(uname, cookie):
+    def to_read(uname, cookie=COOKIE):
         content = StorygraphScraper.to_read(uname, cookie)
-        return Storygraph.parse_html(content)
+        return Storygraph.parse_html(content, "To read")
 
     @staticmethod
-    def books_read(uname, cookie):
+    def books_read(uname, cookie=COOKIE):
         content = StorygraphScraper.books_read(uname, cookie)
-        return Storygraph.parse_html(content)
+        return Storygraph.parse_html(content, "Read")
+
+    @staticmethod
+    def get_user_books(uname, cookie=COOKIE):
+        user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
+        print(user_book_path)
+        if os.path.exists(user_book_path):
+            user_df = pl.read_parquet(user_book_path)
+            return user_df.to_dicts()
+
+        LOGGER.info("Fetching currently reading...")
+        current = Storygraph.currently_reading(uname, cookie)
+        LOGGER.info("Fetching to read...")
+        to_read = Storygraph.to_read(uname, cookie)
+        LOGGER.info("Fetching books read...")
+        read = Storygraph.books_read(uname, cookie)
+
+        books = current + to_read + read
+        pl.from_records(books).write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
+        return books
