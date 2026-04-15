@@ -12,8 +12,5 @@
 		"src/routes/loading/+page.ts",
 		"src/routes/loading/+page.server.ts"
 	],
-	"/results": [],
-	"/users": [
-		"src/routes/users/+page.server.ts"
-	]
+	"/results": []
 }

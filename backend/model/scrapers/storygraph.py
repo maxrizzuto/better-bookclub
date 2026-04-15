@@ -73,6 +73,7 @@ class Storygraph:
     def parse_html(html, shelf):
         soup = BeautifulSoup(html, "html.parser")
         books_list = list()
+        rating_map = dict()
 
         if soup.find(string="Sorry, that page doesn't exist!"):
             raise ValueError("Username not found. Please try a different username.")
@@ -84,11 +85,34 @@ class Storygraph:
         ]
 
         books = [
-            x.parent.parent.select("div[class*='book-title-author-and-series']")[0]
+            x.parent.parent.select("div[class*='book-title-author-and-series'] > h3")[0]
             for x in p_elements
             if x.parent and x.parent.parent
         ]
         isbns = [x.text.split(" ")[-1].strip() for x in p_elements]
+
+        if shelf == "Read":
+            ratings = soup.select(
+                "div[data-controller='remove-book']>div>div>div>div>span"
+            )
+            rating_isbns = list()
+            for rating in ratings:
+                try:
+                    rating_isbns.append(
+                        rating.parent.parent.parent.parent.parent.parent.parent.select(
+                            "div[class*='hidden edition-info mt-3'] p"
+                        )[0]
+                        .get_text()
+                        .split(" ")[-1]
+                        .strip()
+                    )
+                except IndexError:
+                    rating_isbns.append(None)
+                rating_map = {
+                    rating_isbns[idx]: ratings[idx].get_text()
+                    for idx in range(len(rating_isbns))
+                    if rating_isbns[idx]
+                }
 
         for idx in range(len(books)):
             book = books[idx]
@@ -100,14 +124,16 @@ class Storygraph:
             storygraph_id = book.find("a")
             if storygraph_id:
                 storygraph_id = str(storygraph_id["href"]).split("/")[-1]
-            books_list.append(
-                {
-                    "title": title,
-                    "storygraph_id": storygraph_id,
-                    "isbn": isbn,
-                    "shelf": shelf,
-                }
-            )
+            book = {
+                "title": title,
+                "storygraph_id": storygraph_id,
+                "isbn": isbn,
+                "shelf": shelf,
+            }
+            if shelf == "Read" and isbn in rating_map.keys():
+                book["rating"] = rating_map[isbn]
+
+            books_list.append(book)
         return books_list
 
     @staticmethod
@@ -129,7 +155,6 @@ class Storygraph:
     @staticmethod
     def get_user_books(uname, cookie=COOKIE):
         user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
-        print(user_book_path)
         if os.path.exists(user_book_path):
             user_df = pl.read_parquet(user_book_path)
             return user_df.to_dicts()
@@ -142,8 +167,9 @@ class Storygraph:
         read = Storygraph.books_read(uname, cookie)
 
         books = current + to_read + read
-        pl.from_records(books).write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
-        return books
+        user_df = pl.from_records(books)
+        user_df.write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
+        return user_df.to_dicts()
 
 
 if __name__ == "__main__":

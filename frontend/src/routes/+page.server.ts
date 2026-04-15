@@ -1,12 +1,10 @@
-import { redirect, type Actions } from '@sveltejs/kit';
-import { userBooks } from './state.svelte';
+import { type Actions } from '@sveltejs/kit';
 
 export const actions = {
 	default: async ({ request }) => {
 		const data = await request.formData();
 		const unames = data.getAll('user');
 		const query = unames.map((uname) => `user=${uname}`).join('&');
-		console.log(query);
 		const response = await fetch(`http://127.0.0.1:8000/users?${query}`);
 		const reader = response.body!.getReader();
 		const decoder = new TextDecoder();
@@ -17,10 +15,8 @@ export const actions = {
 			if (done) break;
 			raw += decoder.decode(value, { stream: true });
 		}
-		const dict = JSON.parse(raw);
-		// redirect to loading page while data is fetched
-		userBooks.books = dict;
-
-		redirect(303, '/users');
+		const dict: Record<string, Array<Record<string, string>>> = JSON.parse(raw);
+		console.log(dict);
+		return { success: true, userBooks: dict };
 	}
 } satisfies Actions;

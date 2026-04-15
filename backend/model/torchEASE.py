@@ -282,6 +282,9 @@ class TorchEASE:
     def group_preds(self, unames: list[str]) -> pl.DataFrame:
         pred_df = pl.DataFrame()
         unames.sort()
+        preds_path = BASE_DIR / f"preds/groups/{'_'.join(unames)}_preds.parquet"
+        if os.path.exists(preds_path):
+            return pl.read_parquet(preds_path)
         for uname in unames:
             self.logger.info(f"Getting {uname} predictions.")
             if os.path.exists(BASE_DIR / f"preds/users/{uname}_preds.parquet"):
@@ -312,7 +315,7 @@ class TorchEASE:
 
         pred_df = pred_df.sort("preds", descending=True)
         print(pred_df[:20])
-        pred_df.write_parquet(BASE_DIR / f"preds/groups/{'_'.join(unames)}.parquet")
+        pred_df.write_parquet(preds_path)
 
         return pred_df
 
