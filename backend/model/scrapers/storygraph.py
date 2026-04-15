@@ -1,34 +1,49 @@
 import logging
 import os
+import random
 import time
 from pathlib import Path
 
 import polars as pl
+import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
+BASE_DIR = Path(__file__).parent.parent
+load_dotenv(BASE_DIR / "scrapers/.env")
 COOKIE = os.getenv("COOKIE")
 LOGGER = logging.getLogger()
-BASE_DIR = Path(__file__).parent.parent
 
 
 class StorygraphScraper:
     @staticmethod
     def fetch_url(url, cookie=COOKIE):
-        options = Options()
-        options.add_argument("--headless")
-        driver = webdriver.Chrome(options=options)  # pyright: ignore[reportCallIssue]
+        options = uc.ChromeOptions()
+        options.add_argument("--window-size=1920,1080")
+        driver = uc.Chrome(options=options, headless=False)  # pyright: ignore[reportCallIssue]
+
         driver.get(url)
 
         if cookie:
+            driver.delete_all_cookies()
             driver.add_cookie({"name": "remember_user_token", "value": cookie})
-        driver.refresh()
+
+        driver.get(url)
+
+        # wait for Cloudflare to finish
+        wait = WebDriverWait(driver, 20)
+        wait.until_not(EC.title_contains("Just a moment"))
+
+        # driver.refresh()
         SCROLL_PAUSE_TIME = 5
         last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(SCROLL_PAUSE_TIME)
+            time.sleep(SCROLL_PAUSE_TIME + random.random() * 3)
             new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 break
@@ -108,6 +123,7 @@ class Storygraph:
     @staticmethod
     def books_read(uname, cookie=COOKIE):
         content = StorygraphScraper.books_read(uname, cookie)
+        print(content)
         return Storygraph.parse_html(content, "Read")
 
     @staticmethod
@@ -128,3 +144,7 @@ class Storygraph:
         books = current + to_read + read
         pl.from_records(books).write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
         return books
+
+
+if __name__ == "__main__":
+    Storygraph.books_read("mrizzuto")

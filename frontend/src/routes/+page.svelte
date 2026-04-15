@@ -150,7 +150,7 @@
 		width: 50vw;
 		height: 75px;
 		border-radius: 20px;
-		font-size: 1.25em;
+		font-size: 1em;
 		padding-left: 20px;
 		max-width: 1000px;
 		text-align: left;
@@ -205,6 +205,7 @@
 		font-size: 0.9em;
 		transition: 200ms ease-in-out;
 		visibility: hidden;
+		margin-left: 10px;
 	}
 
 	#submit.unsubmittable:hover + .tooltip {
@@ -218,6 +219,12 @@
 
 	#submit.submittable:hover {
 		background-color: darkseagreen;
+	}
+
+	.submit-button {
+		display: flex;
+		align-items: center;
+		max-width: 100px;
 	}
 
 	/* ADDED USERS */
