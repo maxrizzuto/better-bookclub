@@ -8,20 +8,20 @@ import polars as pl
 import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 BASE_DIR = Path(__file__).parent.parent
 load_dotenv(BASE_DIR / "scrapers/.env")
 COOKIE = os.getenv("COOKIE")
+UNAME = os.getenv("SG_UNAME")
+PW = os.getenv("SG_PW")
 LOGGER = logging.getLogger()
 
 
 class StorygraphScraper:
     @staticmethod
-    def fetch_url(url, cookie=COOKIE):
+    def fetch_url_stream(url, cookie=COOKIE):
         options = uc.ChromeOptions()
         options.add_argument("--window-size=1920,1080")
         driver = uc.Chrome(options=options, headless=False)  # pyright: ignore[reportCallIssue]
@@ -35,37 +35,36 @@ class StorygraphScraper:
         driver.get(url)
 
         # wait for Cloudflare to finish
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, 2000)
         wait.until_not(EC.title_contains("Just a moment"))
+
+        if EC.title_contains("Sign In"):
+            username = driver.find_element("id", "user_email")
+            password = driver.find_element("id", "user_password")
+
+            if UNAME and PW:
+                username.send_keys(UNAME)
+                password.send_keys(PW)
+
+            driver.find_element("id", "sign-in-btn").click()
 
         # driver.refresh()
         SCROLL_PAUSE_TIME = 5
         last_height = driver.execute_script("return document.body.scrollHeight")
-        while True:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(SCROLL_PAUSE_TIME + random.random() * 3)
-            new_height = driver.execute_script("return document.body.scrollHeight")
-            if new_height == last_height:
-                break
-            last_height = new_height
-        html_content = driver.page_source
-        driver.quit()
-        return html_content
 
-    @staticmethod
-    def currently_reading(uname, cookie=COOKIE):
-        url = f"https://app.thestorygraph.com/currently-reading/{uname}"
-        return StorygraphScraper.fetch_url(url, cookie)
+        try:
+            while True:
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(SCROLL_PAUSE_TIME + random.random() * 3)
+                new_height = driver.execute_script("return document.body.scrollHeight")
 
-    @staticmethod
-    def to_read(uname, cookie=COOKIE):
-        url = f"https://app.thestorygraph.com/to-read/{uname}"
-        return StorygraphScraper.fetch_url(url, cookie)
+                yield driver.page_source
 
-    @staticmethod
-    def books_read(uname, cookie=COOKIE):
-        url = f"https://app.thestorygraph.com/books-read/{uname}"
-        return StorygraphScraper.fetch_url(url, cookie)
+                if new_height == last_height:
+                    break
+                last_height = new_height
+        finally:
+            driver.quit()
 
 
 class Storygraph:
@@ -137,40 +136,41 @@ class Storygraph:
         return books_list
 
     @staticmethod
-    def currently_reading(uname, cookie=COOKIE):
-        content = StorygraphScraper.currently_reading(uname, cookie)
-        return Storygraph.parse_html(content, "Currently reading")
-
-    @staticmethod
-    def to_read(uname, cookie=COOKIE):
-        content = StorygraphScraper.to_read(uname, cookie)
-        return Storygraph.parse_html(content, "To read")
-
-    @staticmethod
-    def books_read(uname, cookie=COOKIE):
-        content = StorygraphScraper.books_read(uname, cookie)
-        print(content)
-        return Storygraph.parse_html(content, "Read")
-
-    @staticmethod
-    def get_user_books(uname, cookie=COOKIE):
+    def stream_books(uname, cookie=COOKIE):
         user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
+        temp_book_path = f"{''.join(str(user_book_path).split('.')[:-1])}-temp.parquet"
         if os.path.exists(user_book_path):
-            user_df = pl.read_parquet(user_book_path)
-            return user_df.to_dicts()
+            return
 
-        LOGGER.info("Fetching currently reading...")
-        current = Storygraph.currently_reading(uname, cookie)
-        LOGGER.info("Fetching to read...")
-        to_read = Storygraph.to_read(uname, cookie)
-        LOGGER.info("Fetching books read...")
-        read = Storygraph.books_read(uname, cookie)
+        else:
+            url_map = {
+                "Currently reading": f"https://app.thestorygraph.com/currently-reading/{uname}",
+                "To read": f"https://app.thestorygraph.com/to-read/{uname}",
+                "Read": f"https://app.thestorygraph.com/books-read/{uname}",
+            }
 
-        books = current + to_read + read
-        user_df = pl.from_records(books)
-        user_df.write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
-        return user_df.to_dicts()
+            books = []
+            seen_ids = set()
+            for shelf, url in url_map.items():
+                LOGGER.info(f"Fetching {shelf}...")
+                for html_snapshot in StorygraphScraper.fetch_url_stream(url, cookie):
+                    shelf_books = Storygraph.parse_html(html_snapshot, shelf)
+                    books = [
+                        book
+                        for book in shelf_books
+                        if book["isbn"] and book["isbn"] not in seen_ids
+                    ]
+                    seen_ids.update(book["isbn"] for book in books)
+                    if books:
+                        pl.from_records(books).write_parquet(temp_book_path)
+
+            if books:
+                user_df = pl.from_records(books)
+                user_df = user_df.unique("isbn")
+                user_df.write_parquet(user_book_path)
+                os.remove(temp_book_path)
+                return
 
 
 if __name__ == "__main__":
-    Storygraph.books_read("mrizzuto")
+    Storygraph.stream_books("mrizzuto")

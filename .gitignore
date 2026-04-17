@@ -259,3 +259,4 @@ goodreads_export.csv
 .vscode/settings.json
 storygraph.csv
 sandbox.py
+.prettierrc

@@ -1,8 +1,14 @@
+import os
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Query
+import polars as pl
+from fastapi import BackgroundTasks, FastAPI, Query
 from model.scrapers.storygraph import Storygraph
 from model.torchEASE import TorchEASE
+
+BASE_DIR = Path(__file__).parent
+
 
 app = FastAPI()
 
@@ -12,8 +18,14 @@ async def root():
     return {"message": "Hello World."}
 
 
+def start_stream_books(username: str):
+    Storygraph.stream_books(username)
+    return
+
+
 @app.get("/users")
 async def books(
+    background_tasks: BackgroundTasks,
     user: Annotated[
         list[str] | None,
         Query(description="List of users to get books for from Storygraph."),
@@ -21,13 +33,24 @@ async def books(
 ):
     if user:
         dct = dict()
+        dct["status"] = "complete"
+        dct["userBooks"] = {}
         for username in user:
-            user_books = Storygraph.get_user_books(username)
-            dct[username] = user_books
+            user_path = BASE_DIR / f"model/preds/users/{username}.parquet"
+            temp_path = BASE_DIR / f"model/preds/users/{username}-temp.parquet"
+            if os.path.exists(user_path):
+                dct["userBooks"][username] = pl.read_parquet(user_path).to_dicts()
+            elif os.path.exists(temp_path):
+                dct["userBooks"][username] = pl.read_parquet(temp_path).to_dicts()
+                dct["status"] = "in progress"
+            else:
+                background_tasks.add_task(start_stream_books, username)
+                dct["status"] = "in progress"
+                pl.DataFrame().write_parquet(temp_path)
         return dct
 
     else:
-        return {"message": "No usernames input."}
+        return {"status": "No usernames input."}
 
 
 @app.get("/recommendations")
@@ -42,11 +65,22 @@ async def recs(
         # [TODO] update to cloud storage url
         pred_df = model.group_preds(user)
 
-        return {
-            "message": "the right endpoint!",
-            "usernames": user,
-            "num_users": len(user),
-            "top_pred": pred_df["title"][0],
-        }
+        result = {}
+        result["usernames"] = user
+        group_results = (
+            pred_df.with_columns(
+                preds=pl.col("preds") / pl.col("preds").max()
+            ).with_columns(preds=pl.col("preds").round(3))[:10]
+        ).to_dicts()
+        result["group_results"] = group_results
+        result["user_results"] = {}
+        for username in user:
+            user_results = (
+                model.pred_df_from_uname(username)
+                .with_columns(preds=pl.col("preds") / pl.col("preds").max())
+                .with_columns(preds=pl.col("preds").round(3))[:10]
+            ).to_dicts()
+            result["user_results"][username] = user_results[:10]
+        return result
     else:
         return {"message": "no usernames"}

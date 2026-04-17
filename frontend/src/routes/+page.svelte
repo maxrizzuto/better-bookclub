@@ -2,12 +2,25 @@
 	import { enhance } from '$app/forms';
 	import { flip } from 'svelte/animate';
 	import { fly } from 'svelte/transition';
-
 	import type { PageProps } from './$types';
 	import UserBook from '$lib/components/UserBook.svelte';
-	let { form }: PageProps = $props();
+	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 
 	const users: string[] = $state([]);
+	let { form, data }: PageProps = $props();
+
+	// reruns load function every 5 seconds (for polling user books)
+	onMount(() => {
+		if (data.status === 'complete') {
+			return;
+		} else {
+			const interval = setInterval(() => {
+				invalidateAll();
+			}, 5000);
+			return () => clearInterval(interval);
+		}
+	});
 
 	// [TODO] function for add user, export serverside function that checks user (not form action)
 	function addUser() {
@@ -46,17 +59,25 @@
 
 {#if form?.success}
 	<div class="users-container">
-		{#each Object.entries(form.userBooks) as [username, books]}
-			<div class="user">
-				<h1 class="username">{username}</h1>
-				<div class="user-books">
-					{#each books as book}
-						<UserBook isbn={book.isbn} />
-					{/each}
+		{#if data.userBooks}
+			{#each Object.entries(data.userBooks) as [username, books]}
+				<div class="user">
+					<h1 class="username">{username}</h1>
+					<div class="user-books">
+						{#each books as book}
+							<UserBook isbn={book.isbn} />
+						{/each}
+					</div>
 				</div>
-			</div>
-		{/each}
+			{/each}
+		{/if}
 	</div>
+	<form method="POST" action="?/getRecs">
+		<button type="submit">Get recs</button>
+		{#each users as user (user)}
+			<input type="hidden" name="user" value={user} />
+		{/each}
+	</form>
 
 	<style>
 		.users-container {
@@ -81,6 +102,7 @@
 			justify-content: center;
 			align-items: baseline;
 			flex: 1;
+			flex-wrap: wrap;
 		}
 	</style>
 {:else}
@@ -90,7 +112,7 @@
 		</div>
 
 		<div id="form">
-			<form method="POST" name="unamesForm" id="unamesForm" use:enhance>
+			<form method="POST" name="unamesForm" id="unamesForm" action="?/getBooks" use:enhance>
 				<div class="inputs">
 					<input
 						type="text"
@@ -292,6 +314,7 @@
 	</style>
 {/if}
 
+<!-- global styles -->
 <style>
 	/* GLOBALS */
 	* {

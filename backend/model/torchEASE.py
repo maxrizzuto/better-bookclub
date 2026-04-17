@@ -122,8 +122,8 @@ class TorchEASE:
 
                 self.logger.info("Training dataframe created and saved.")
 
-            self.user_lookup = self.generate_labels(train_df, self.user_col)
-            self.item_lookup = self.generate_labels(train_df, self.item_col)
+            self.user_lookup = self._generate_labels(train_df, self.user_col)
+            self.item_lookup = self._generate_labels(train_df, self.item_col)
 
             self.item_map = {}
             self.logger.info("Building item hashmap")
@@ -158,7 +158,7 @@ class TorchEASE:
             self.logger.info("Data saved")
             self.fit()
 
-    def generate_labels(self, df, col):
+    def _generate_labels(self, df, col):
         dist_labels = df.unique([col], maintain_order=True)[[col]]
         dist_labels = dist_labels.with_columns(
             pl.col(col).unique(maintain_order=True)
@@ -206,11 +206,14 @@ class TorchEASE:
             return user_df
 
     def pred_df_from_uname(self, uname):
-        user_df = self.get_user_books(uname)
-        pred_df = model.pred(user_df, "isbn", n=None)
-        pred_df.write_parquet(BASE_DIR / f"preds/users/{uname}_preds.parquet")
-
-        return pred_df
+        preds_path = BASE_DIR / f"preds/users/{uname}_preds.parquet"
+        if os.path.exists(preds_path):
+            return pl.read_parquet(preds_path)
+        else:
+            user_df = self.get_user_books(uname)
+            pred_df = model.pred(user_df, "isbn", n=None)
+            pred_df.write_parquet(preds_path)
+            return pred_df
 
     def pred(
         self,
@@ -306,7 +309,7 @@ class TorchEASE:
                     pl.concat([pred_df, user_df], how="diagonal_relaxed")
                     .group_by("isbn")
                     .agg(
-                        preds=pl.col("preds").product(),
+                        preds=pl.col("preds").mean(),
                         *[pl.col(c).first() for c in other_cols],
                     )
                 )
@@ -314,7 +317,6 @@ class TorchEASE:
                 pred_df = user_df
 
         pred_df = pred_df.sort("preds", descending=True)
-        print(pred_df[:20])
         pred_df.write_parquet(preds_path)
 
         return pred_df
@@ -331,7 +333,7 @@ if __name__ == "__main__":
     )
 
     # predict
-    model.group_preds(UNAMES)
+    # model.group_preds(UNAMES)
 
     # max_df = model.pred_df_from_uname("mrizzuto")
     # preds_df = model.pred(max_df, books_df, id_col="isbn")

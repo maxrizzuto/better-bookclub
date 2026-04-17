@@ -8,9 +8,7 @@
 	"/api/recommendations/status": [
 		"src/routes/api/recommendations/status/+server.ts"
 	],
-	"/loading": [
-		"src/routes/loading/+page.ts",
-		"src/routes/loading/+page.server.ts"
-	],
-	"/results": []
+	"/results/[user]": [
+		"src/routes/results/[user]/+page.server.ts"
+	]
 }
