@@ -29,7 +29,7 @@ ITEM_COL = "isbn13"
 USER_COL = "user_id"
 
 
-# [TODO] update parameters
+# [TODO] FILTER BOOKS BY WORK_ID INITIALLY SINCE THERE ARE MULTIPLE ISBNS
 class TorchEASE:
     def __init__(
         self,

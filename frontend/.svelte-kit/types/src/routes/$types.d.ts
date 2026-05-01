@@ -26,8 +26,8 @@ type ActionsFailure<T extends Record<string, (...args: any) => any>> = { [Key in
 type ActionsExport = typeof import('../../../../src/routes/+page.server.js').actions
 export type SubmitFunction = Kit.SubmitFunction<Expand<ActionsSuccess<ActionsExport>>, Expand<ActionsFailure<ActionsExport>>>
 export type ActionData = Expand<Kit.AwaitedActions<ActionsExport>> | null;
-export type PageServerData = Expand<OptionalUnion<EnsureDefined<Kit.LoadProperties<Awaited<ReturnType<typeof import('../../../../src/routes/+page.server.js').load>>>>>>;
-export type PageData = Expand<Omit<PageParentData, keyof PageServerData> & EnsureDefined<PageServerData>>;
+export type PageServerData = null;
+export type PageData = Expand<PageParentData>;
 export type Action<OutputData extends Record<string, any> | void = Record<string, any> | void> = Kit.Action<RouteParams, OutputData, RouteId>
 export type Actions<OutputData extends Record<string, any> | void = Record<string, any> | void> = Kit.Actions<RouteParams, OutputData, RouteId>
 export type PageProps = { params: RouteParams; data: PageData; form: ActionData }

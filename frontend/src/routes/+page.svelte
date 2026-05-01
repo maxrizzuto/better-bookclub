@@ -7,20 +7,50 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 
-	const users: string[] = $state([]);
-	let { form, data }: PageProps = $props();
+	type Book = {
+		title: string;
+		storygraph_id: string;
+		isbn: string;
+		shelf?: string;
+		rating?: number;
+	};
 
-	// reruns load function every 5 seconds (for polling user books)
-	onMount(() => {
-		if (data.status === 'complete') {
-			return;
-		} else {
-			const interval = setInterval(() => {
-				invalidateAll();
-			}, 5000);
-			return () => clearInterval(interval);
-		}
-	});
+	type UserBooks = Record<string, Array<Book>>;
+
+	const users: string[] = $state([]);
+	const userBooks: UserBooks = $state({});
+	let { form }: PageProps = $props();
+	let eventSource: EventSource | null = null;
+	let formSubmitted: boolean = $state(false);
+
+	function getUserBooks() {
+		formSubmitted = true;
+		if (eventSource) return;
+
+		const query = users.map((uname) => `user=${uname}`).join('&');
+		eventSource = new EventSource(`http://127.0.0.1:8000/users?${query}`);
+
+		eventSource.onmessage = (event: MessageEvent) => {
+			const data = JSON.parse(event.data);
+			if (data.data === 'close') return;
+			console.log(data);
+			if (data.username in userBooks) {
+				userBooks[data.username].push(...data.books);
+			} else {
+				userBooks[data.username] = data.books;
+			}
+		};
+
+		eventSource.addEventListener('close', () => {
+			eventSource?.close();
+			eventSource = null;
+		});
+
+		eventSource.onerror = () => {
+			eventSource?.close();
+			eventSource = null;
+		};
+	}
 
 	// [TODO] function for add user, export serverside function that checks user (not form action)
 	function addUser() {
@@ -57,10 +87,10 @@
 	}
 </script>
 
-{#if form?.success}
+{#if formSubmitted}
 	<div class="users-container">
-		{#if data.userBooks}
-			{#each Object.entries(data.userBooks) as [username, books]}
+		{#if userBooks}
+			{#each Object.entries(userBooks) as [username, books]}
 				<div class="user">
 					<h1 class="username">{username}</h1>
 					<div class="user-books">
@@ -99,7 +129,7 @@
 
 		.user-books {
 			display: flex;
-			justify-content: center;
+			justify-content: flex-start;
 			align-items: baseline;
 			flex: 1;
 			flex-wrap: wrap;
@@ -112,7 +142,15 @@
 		</div>
 
 		<div id="form">
-			<form method="POST" name="unamesForm" id="unamesForm" action="?/getBooks" use:enhance>
+			<form
+				method="GET"
+				name="unamesForm"
+				id="unamesForm"
+				onsubmit={(e) => {
+					e.preventDefault();
+					getUserBooks();
+				}}
+			>
 				<div class="inputs">
 					<input
 						type="text"

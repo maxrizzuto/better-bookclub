@@ -8,8 +8,11 @@ import polars as pl
 import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 
 BASE_DIR = Path(__file__).parent.parent
 load_dotenv(BASE_DIR / "scrapers/.env")
@@ -22,9 +25,12 @@ LOGGER = logging.getLogger()
 class StorygraphScraper:
     @staticmethod
     def fetch_url_stream(url, cookie=COOKIE):
-        options = uc.ChromeOptions()
-        options.add_argument("--window-size=1920,1080")
-        driver = uc.Chrome(options=options, headless=False)  # pyright: ignore[reportCallIssue]
+        # options = uc.ChromeOptions()
+        # options.add_argument("--window-size=1920,1080")
+        service = ChromeService(ChromeDriverManager().install())
+        driver = webdriver.Chrome(
+            service=service,
+        )  # pyright: ignore[reportCallIssue]
 
         driver.get(url)
 
@@ -140,7 +146,7 @@ class Storygraph:
         user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
         temp_book_path = f"{''.join(str(user_book_path).split('.')[:-1])}-temp.parquet"
         if os.path.exists(user_book_path):
-            return
+            yield pl.read_parquet(user_book_path).to_dicts()
 
         else:
             url_map = {
@@ -155,21 +161,24 @@ class Storygraph:
                 LOGGER.info(f"Fetching {shelf}...")
                 for html_snapshot in StorygraphScraper.fetch_url_stream(url, cookie):
                     shelf_books = Storygraph.parse_html(html_snapshot, shelf)
-                    books = [
+                    new_books = [
                         book
                         for book in shelf_books
                         if book["isbn"] and book["isbn"] not in seen_ids
                     ]
-                    seen_ids.update(book["isbn"] for book in books)
-                    if books:
+                    seen_ids.update(book["isbn"] for book in new_books)
+                    if new_books:
+                        books += new_books
                         pl.from_records(books).write_parquet(temp_book_path)
+
+                    # trying to add SSE? does this convert it to a generator properly?
+                    yield new_books
 
             if books:
                 user_df = pl.from_records(books)
                 user_df = user_df.unique("isbn")
                 user_df.write_parquet(user_book_path)
                 os.remove(temp_book_path)
-                return
 
 
 if __name__ == "__main__":
