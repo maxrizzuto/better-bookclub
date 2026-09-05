@@ -1,4 +1,12 @@
-# try to make sparse matrix lmao
+"""
+TODOs:
+- Recommendations on trained model return incorrect ratings count number for given books: it's just one
+of the isbns, not the work aggregated together. It's not working at some point: DEBUG.
+
+- Put predictions for users into folders based on the model parameters (e.g. there shouldn't be one
+Max prediction file, it should be model specific)
+"""
+
 import logging
 import os
 import sys
@@ -9,28 +17,32 @@ import numpy as np
 import polars as pl
 import torch
 
-from .cleaning import sample_books
+from .cleaning import sample_works
 from .scrapers.storygraph import Storygraph
 
 warnings.filterwarnings("ignore", ".*Sparse CSR tensor support is in beta state.*")
 
 # users who reviewed >= 20 books, all of which have at least 50 reviews
 BASE_DIR = Path(__file__).parent
-TRAINED = True
+TRAINED = False
 L2_LAMBDA = 500
-NUM_SAMPLES = 300000
+NUM_SAMPLES = 20000000
 MIN_REVIEWS = 200
 GOODREADS_PATH = BASE_DIR / "storygraph.csv"
 B_PATH = BASE_DIR / f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
-EXPORT_ID_COL = "ISBN/UID"
+# EXPORT_ID_COL = "ISBN/UID"
 UNAMES = ["mrizzuto", "itsroryo"]
 
-ITEM_COL = "isbn13"
+# ITEM_COL = "isbn13"
+ITEM_COL = "work_id"
 USER_COL = "user_id"
+
+PRED = True
 
 
 # [TODO] FILTER BOOKS BY WORK_ID INITIALLY SINCE THERE ARE MULTIPLE ISBNS
 class TorchEASE:
+    # ALL GOOD WITH WORK ID
     def __init__(
         self,
         trained: bool = TRAINED,
@@ -51,7 +63,7 @@ class TorchEASE:
         min_reviews: int
             Minimum number of reviews a book must receive to be in our training. Used for training and file lookup.
         item_col: str
-            The column name containing our items in the training dataframe. These should be ISBNs.
+            The column name containing our items in the training dataframe. These should be work ids from Goodreads.
         user_col: str
             The column name containing our users in the training dataframe.
 
@@ -79,8 +91,8 @@ class TorchEASE:
         self.item_id_col = self.item_col + "_id"
         self.user_id_col = self.user_col + "_id"
         self.path = BASE_DIR / f"data/train/{self.num_samples}_{self.min_reviews}/"
-        self.books_path = (
-            self.path / f"goodreads_books_{self.num_samples}_{self.min_reviews}.parquet"
+        self.works_path = (
+            self.path / f"goodreads_works_{self.num_samples}_{self.min_reviews}.parquet"
         )
         self.l2_reg = l2_reg
         self.score_col = score_col
@@ -90,6 +102,9 @@ class TorchEASE:
                 self.logger.info("Loading files")
                 self.user_lookup = pl.read_parquet(self.path / "user_lookup.parquet")
                 self.item_lookup = pl.read_parquet(self.path / "item_lookup.parquet")
+                self.isbn_map = pl.read_parquet(
+                    self.path.parent / "isbn_work_map.parquet"
+                )
                 self.indices = torch.load(self.path / "indices.pt")
                 self.values = torch.load(self.path / "values.pt")
                 self.logger.info("Files loaded")
@@ -98,27 +113,33 @@ class TorchEASE:
                 self.logger.error("File couldn't be found: check training")
                 raise
 
+        # [TODO] check first make sure work id is properly used in training, then saved,,,,
         else:
             os.makedirs(self.path, exist_ok=True)
 
             try:
                 train_df = pl.read_parquet(
                     self.path
-                    / f"goodreads_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+                    / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+                )
+                self.isbn_map = pl.read_parquet(
+                    self.path.parent / "isbn_work_map.parquet"
                 )
 
-                if not os.path.isfile(self.books_path):
+                if not os.path.isfile(self.works_path):
                     raise FileNotFoundError
 
             except FileNotFoundError:
-                self.logger.error("Training dataframe not found, sampling dataframe.")
-                books_df, train_df = sample_books(self.num_samples, self.min_reviews)
+                self.logger.info("Training dataframe not found, sampling dataframe.")
+                # isbn map is work ids to isbns
+                works_df, train_df = sample_works(self.num_samples, self.min_reviews)
                 train_df.write_parquet(
                     self.path
-                    / f"goodreads_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+                    / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
                 )
-                books_df.write_parquet(self.books_path)
-                del books_df
+                self.isbn_map = pl.read_parquet(self.path / "../isbn_work_map.parquet")
+                works_df.write_parquet(self.works_path)
+                del works_df
 
                 self.logger.info("Training dataframe created and saved.")
 
@@ -166,6 +187,7 @@ class TorchEASE:
 
         return dist_labels
 
+    # [TODO] work id should work now: check
     def fit(self, export: bool = True):
         self.logger.info("Building G Matrix")
         G = torch.sparse.mm(self.sparse.T, self.sparse)
@@ -183,13 +205,39 @@ class TorchEASE:
         if export:
             np.save(f"{self.path}/B{self.num_samples}.npy", B.numpy())
 
-        return
-
-    def get_user_books(self, uname) -> pl.DataFrame:
+    # [TODO] work id should work now: check
+    def get_user_works(self, uname) -> pl.DataFrame:
+        user_works_path = BASE_DIR / f"preds/users/{uname}_works.parquet"
         user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
-        if os.path.exists(user_book_path):
+        if os.path.exists(user_works_path):
+            return pl.read_parquet(user_works_path)
+        elif os.path.exists(user_book_path):
             user_df = pl.read_parquet(user_book_path)
-            return user_df
+            if "work_id" in user_df.columns:
+                user_df.write_parquet(user_works_path)
+                return user_df
+            elif "isbn13" in user_df.columns:
+                user_df = (
+                    user_df.join(self.isbn_map, on="isbn13", how="left")
+                    .drop_nulls("work_id")
+                    .drop("isbn")
+                )
+                user_df.write_parquet(user_works_path)
+                return user_df
+            elif "isbn" in user_df.columns:
+                user_df = (
+                    user_df.join(
+                        self.isbn_map, left_on="isbn", right_on="isbn13", how="left"
+                    )
+                    .drop_nulls("work_id")
+                    .drop("isbn")
+                )
+                user_df.write_parquet(user_works_path)
+                return user_df
+            else:
+                self.logger.error("Error with user dataframes.")
+                raise FileNotFoundError
+
         else:
             self.logger.info("Fetching currently reading...")
             current = Storygraph.currently_reading(uname)
@@ -201,20 +249,28 @@ class TorchEASE:
             books = current + to_read + read
 
             user_df = pl.from_records(books).unique("isbn")
-            user_df.write_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
-
+            user_df = (
+                user_df.join(
+                    self.isbn_map, left_on="isbn", right_on="isbn13", how="left"
+                )
+                .drop_nulls("work_id")
+                .drop("isbn")
+            )
+            user_df.write_parquet(BASE_DIR / f"preds/users/{uname}_works.parquet")
             return user_df
 
+    # [TODO] work id should work now: check
     def pred_df_from_uname(self, uname):
         preds_path = BASE_DIR / f"preds/users/{uname}_preds.parquet"
         if os.path.exists(preds_path):
             return pl.read_parquet(preds_path)
         else:
-            user_df = self.get_user_books(uname)
-            pred_df = model.pred(user_df, "isbn", n=None)
+            user_df = self.get_user_works(uname)
+            pred_df = model.pred(user_df, "work_id", n=None)
             pred_df.write_parquet(preds_path)
             return pred_df
 
+    # [TODO] check that work id works
     def pred(
         self,
         pred_df: pl.DataFrame,
@@ -223,11 +279,25 @@ class TorchEASE:
     ) -> pl.DataFrame:
         """
         Take in goodreads dataframe with interacted books, return top 20
+
+        pred_df : pl.DataFrame
+            DataFrame of user's books to make predictions on.
+        id_col : str
+            The id column in the user's dataframe.
+        n : None | int = 20
+            The number of books to return.
         """
-        books_df = pl.read_parquet(self.books_path)
+        # convert isbns to work ids
+        if "isbn" in id_col:
+            pred_df = pred_df.join(
+                self.isbn_map, how="inner", left_on=id_col, right_on="isbn13"
+            )
+        works_df = pl.read_parquet(self.works_path)
 
         interacted_books = (
-            pred_df.with_columns(pl.col(id_col).str.strip_chars('"="'))
+            pred_df.with_columns(
+                pl.col(id_col).cast(pl.String).str.strip_chars('"="').cast(pl.Int64)
+            )
             .join(self.item_lookup, left_on=id_col, right_on=self.item_col, how="left")[
                 self.item_id_col
             ]
@@ -271,16 +341,16 @@ class TorchEASE:
             for x in top_n_idx
         ]
 
-        books_df = books_df.filter(pl.col(self.item_col).is_in(top_n_ids))
-        books_df = books_df.sort(
+        works_df = works_df.filter(pl.col(self.item_col).is_in(top_n_ids))
+        works_df = works_df.sort(
             by=pl.col(self.item_col)
             .cast(pl.String)
             .cast(pl.Enum(list(map(str, top_n_ids))))
         )
-        books_df = books_df.with_columns(pl.Series("preds", pred_vals[0]))
+        works_df = works_df.with_columns(pl.Series("preds", pred_vals[0]))
         self.logger.info("Predictions complete")
 
-        return books_df
+        return works_df
 
     def group_preds(self, unames: list[str]) -> pl.DataFrame:
         pred_df = pl.DataFrame()
@@ -294,20 +364,22 @@ class TorchEASE:
                 user_df = pl.read_parquet(
                     BASE_DIR / f"preds/users/{uname}_preds.parquet"
                 )
-            elif os.path.exists(BASE_DIR / f"preds/users/{uname}.parquet"):
-                user_df = pl.read_parquet(BASE_DIR / f"preds/users/{uname}.parquet")
-                user_df = self.pred(user_df, "isbn", n=None)
+            elif os.path.exists(BASE_DIR / f"preds/users/{uname}_works.parquet"):
+                user_df = pl.read_parquet(
+                    BASE_DIR / f"preds/users/{uname}_works.parquet"
+                )
+                user_df = self.pred(user_df, "work_id", n=None)
                 user_df.write_parquet(BASE_DIR / f"preds/users/{uname}_preds.parquet")
             else:
                 user_df = self.pred_df_from_uname(uname)
 
             if len(pred_df) > 0:
                 other_cols = [
-                    col for col in user_df.columns if col not in ("preds", "isbn")
+                    col for col in user_df.columns if col not in ("preds", "work_id")
                 ]
                 pred_df = (
                     pl.concat([pred_df, user_df], how="diagonal_relaxed")
-                    .group_by("isbn")
+                    .group_by("work_id")
                     .agg(
                         preds=pl.col("preds").mean(),
                         *[pl.col(c).first() for c in other_cols],
@@ -327,16 +399,13 @@ if __name__ == "__main__":
         trained=TRAINED,
         num_samples=NUM_SAMPLES,
         min_reviews=MIN_REVIEWS,
-        item_col="isbn13",
-        user_col="user_id",
+        item_col=ITEM_COL,
+        user_col=USER_COL,
         l2_reg=L2_LAMBDA,
     )
 
-    # predict
-    # model.group_preds(UNAMES)
-
-    # max_df = model.pred_df_from_uname("mrizzuto")
-    # preds_df = model.pred(max_df, books_df, id_col="isbn")
-
-    # print(preds_df)
-    # preds_df.write_csv(f"preds/preds_{L2_LAMBDA}l_{NUM_SAMPLES}.csv")
+    if PRED:
+        model.group_preds(UNAMES)
+        max_df = model.pred_df_from_uname("mrizzuto")
+        print(max_df)
+        max_df.write_csv(f"preds/preds_{L2_LAMBDA}l_{NUM_SAMPLES}.csv")
