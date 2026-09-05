@@ -90,9 +90,15 @@ class TorchEASE:
         self.user_col = user_col
         self.item_id_col = self.item_col + "_id"
         self.user_id_col = self.user_col + "_id"
-        self.path = BASE_DIR / f"data/train/{self.num_samples}_{self.min_reviews}/"
+        self.train_path = (
+            BASE_DIR / f"data/train/{self.num_samples}_{self.min_reviews}/"
+        )
+        self.preds_path = BASE_DIR / f"preds/{self.num_samples}_{self.min_reviews}"
+        os.makedirs(self.train_path, exist_ok=True)
+        os.makedirs(self.preds_path, exist_ok=True)
         self.works_path = (
-            self.path / f"goodreads_works_{self.num_samples}_{self.min_reviews}.parquet"
+            self.train_path
+            / f"goodreads_works_{self.num_samples}_{self.min_reviews}.parquet"
         )
         self.l2_reg = l2_reg
         self.score_col = score_col
@@ -100,13 +106,17 @@ class TorchEASE:
         if trained:
             try:
                 self.logger.info("Loading files")
-                self.user_lookup = pl.read_parquet(self.path / "user_lookup.parquet")
-                self.item_lookup = pl.read_parquet(self.path / "item_lookup.parquet")
-                self.isbn_map = pl.read_parquet(
-                    self.path.parent / "isbn_work_map.parquet"
+                self.user_lookup = pl.read_parquet(
+                    self.train_path / "user_lookup.parquet"
                 )
-                self.indices = torch.load(self.path / "indices.pt")
-                self.values = torch.load(self.path / "values.pt")
+                self.item_lookup = pl.read_parquet(
+                    self.train_path / "item_lookup.parquet"
+                )
+                self.isbn_map = pl.read_parquet(
+                    self.train_path.parent / "isbn_work_map.parquet"
+                )
+                self.indices = torch.load(self.train_path / "indices.pt")
+                self.values = torch.load(self.train_path / "values.pt")
                 self.logger.info("Files loaded")
                 self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
             except FileNotFoundError:
@@ -115,15 +125,13 @@ class TorchEASE:
 
         # [TODO] check first make sure work id is properly used in training, then saved,,,,
         else:
-            os.makedirs(self.path, exist_ok=True)
-
             try:
                 train_df = pl.read_parquet(
-                    self.path
+                    self.train_path
                     / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
                 )
                 self.isbn_map = pl.read_parquet(
-                    self.path.parent / "isbn_work_map.parquet"
+                    self.train_path.parent / "isbn_work_map.parquet"
                 )
 
                 if not os.path.isfile(self.works_path):
@@ -134,10 +142,12 @@ class TorchEASE:
                 # isbn map is work ids to isbns
                 works_df, train_df = sample_works(self.num_samples, self.min_reviews)
                 train_df.write_parquet(
-                    self.path
+                    self.train_path
                     / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
                 )
-                self.isbn_map = pl.read_parquet(self.path / "../isbn_work_map.parquet")
+                self.isbn_map = pl.read_parquet(
+                    self.train_path / "../isbn_work_map.parquet"
+                )
                 works_df.write_parquet(self.works_path)
                 del works_df
 
@@ -172,10 +182,10 @@ class TorchEASE:
             self.logger.info("Sparse data built")
 
             # save all relevant data
-            self.user_lookup.write_parquet(self.path / "user_lookup.parquet")
-            self.item_lookup.write_parquet(self.path / "item_lookup.parquet")
-            torch.save(self.indices, self.path / "indices.pt")
-            torch.save(self.values, self.path / "values.pt")
+            self.user_lookup.write_parquet(self.train_path / "user_lookup.parquet")
+            self.item_lookup.write_parquet(self.train_path / "item_lookup.parquet")
+            torch.save(self.indices, self.train_path / "indices.pt")
+            torch.save(self.values, self.train_path / "values.pt")
             self.logger.info("Data saved")
             self.fit()
 
@@ -203,12 +213,12 @@ class TorchEASE:
         B = B.fill_diagonal_(0)
 
         if export:
-            np.save(f"{self.path}/B{self.num_samples}.npy", B.numpy())
+            np.save(f"{self.train_path}/B{self.num_samples}.npy", B.numpy())
 
     # [TODO] work id should work now: check
     def get_user_works(self, uname) -> pl.DataFrame:
-        user_works_path = BASE_DIR / f"preds/users/{uname}_works.parquet"
-        user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
+        user_works_path = BASE_DIR / f"data/users/{uname}_works.parquet"
+        user_book_path = BASE_DIR / f"data/users/{uname}.parquet"
         if os.path.exists(user_works_path):
             return pl.read_parquet(user_works_path)
         elif os.path.exists(user_book_path):
@@ -256,12 +266,12 @@ class TorchEASE:
                 .drop_nulls("work_id")
                 .drop("isbn")
             )
-            user_df.write_parquet(BASE_DIR / f"preds/users/{uname}_works.parquet")
+            user_df.write_parquet(BASE_DIR / f"data/users/{uname}_works.parquet")
             return user_df
 
     # [TODO] work id should work now: check
     def pred_df_from_uname(self, uname):
-        preds_path = BASE_DIR / f"preds/users/{uname}_preds.parquet"
+        preds_path = self.preds_path / f"users/{uname}.parquet"
         if os.path.exists(preds_path):
             return pl.read_parquet(preds_path)
         else:
@@ -313,7 +323,7 @@ class TorchEASE:
         self.logger.info("Generating predictions")
         try:
             B = np.memmap(
-                self.path / f"B{self.num_samples}.npy",
+                self.train_path / f"B{self.num_samples}.npy",
                 dtype="float32",
                 mode="r",
                 shape=(shape, shape),
@@ -355,21 +365,21 @@ class TorchEASE:
     def group_preds(self, unames: list[str]) -> pl.DataFrame:
         pred_df = pl.DataFrame()
         unames.sort()
-        preds_path = BASE_DIR / f"preds/groups/{'_'.join(unames)}_preds.parquet"
-        if os.path.exists(preds_path):
-            return pl.read_parquet(preds_path)
+        group_preds_path = self.preds_path / f"groups/{'_'.join(unames)}.parquet"
+        if os.path.exists(group_preds_path):
+            return pl.read_parquet(group_preds_path)
         for uname in unames:
             self.logger.info(f"Getting {uname} predictions.")
-            if os.path.exists(BASE_DIR / f"preds/users/{uname}_preds.parquet"):
+            if os.path.exists(self.preds_path / f"users/{uname}.parquet"):
+                user_df = pl.read_parquet(self.preds_path / f"users/{uname}.parquet")
+            elif os.path.exists(
+                self.train_path.parent.parent / f"users/{uname}_works.parquet"
+            ):
                 user_df = pl.read_parquet(
-                    BASE_DIR / f"preds/users/{uname}_preds.parquet"
-                )
-            elif os.path.exists(BASE_DIR / f"preds/users/{uname}_works.parquet"):
-                user_df = pl.read_parquet(
-                    BASE_DIR / f"preds/users/{uname}_works.parquet"
+                    self.train_path.parent.parent / f"users/{uname}_works.parquet"
                 )
                 user_df = self.pred(user_df, "work_id", n=None)
-                user_df.write_parquet(BASE_DIR / f"preds/users/{uname}_preds.parquet")
+                user_df.write_parquet(self.preds_path / f"users/{uname}.parquet")
             else:
                 user_df = self.pred_df_from_uname(uname)
 
@@ -389,7 +399,7 @@ class TorchEASE:
                 pred_df = user_df
 
         pred_df = pred_df.sort("preds", descending=True)
-        pred_df.write_parquet(preds_path)
+        pred_df.write_parquet(group_preds_path)
 
         return pred_df
 
