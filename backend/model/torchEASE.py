@@ -10,7 +10,6 @@ Max prediction file, it should be model specific)
 
 - Make it so preds df has ISBNs. Make separate mapping file of a work id's most commonly reviewed ISBN
 (this is for having an ISBN for fetching covers from openlibrary easily).
-CREATED: mapping work ids to most common isbns. now implement into preds
 """
 
 import logging
@@ -30,13 +29,11 @@ warnings.filterwarnings("ignore", ".*Sparse CSR tensor support is in beta state.
 
 # users who reviewed >= 20 books, all of which have at least 50 reviews
 BASE_DIR = Path(__file__).parent
-TRAINED = True
 L2_LAMBDA = 500
-NUM_SAMPLES = 20000000
+NUM_SAMPLES = 30000000
 MIN_REVIEWS = 500
 GOODREADS_PATH = BASE_DIR / "storygraph.csv"
 B_PATH = BASE_DIR / f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
-# EXPORT_ID_COL = "ISBN/UID"
 UNAMES = ["mrizzuto", "itsroryo"]
 
 # ITEM_COL = "isbn13"
@@ -51,7 +48,6 @@ class TorchEASE:
     # ALL GOOD WITH WORK ID
     def __init__(
         self,
-        trained: bool = TRAINED,
         num_samples: int = NUM_SAMPLES,
         min_reviews: int = MIN_REVIEWS,
         item_col: str = ITEM_COL,
@@ -62,8 +58,6 @@ class TorchEASE:
         """
         Class for EASE models built in PyTorch.
 
-        trained: bool
-            Whether or not the specific model has been trained. If True, load data. If False, prepare to train.
         num_samples: int
             Number of samples we want to include in our training. Used for training and file lookup.
         min_reviews: int
@@ -111,41 +105,28 @@ class TorchEASE:
         self.l2_reg = l2_reg
         self.score_col = score_col
 
-        if trained:
-            try:
-                self.logger.info("Loading files")
-                self.user_lookup = pl.read_parquet(
-                    self.train_path / "user_lookup.parquet"
-                )
-                self.item_lookup = pl.read_parquet(
-                    self.train_path / "item_lookup.parquet"
-                )
-                self.isbn_map = pl.read_parquet(
-                    self.train_path.parent / "isbn_work_map.parquet"
-                )
-                self.indices = torch.load(self.train_path / "indices.pt")
-                self.values = torch.load(self.train_path / "values.pt")
-                self.logger.info("Files loaded")
-                self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
-            except FileNotFoundError:
-                self.logger.error("File couldn't be found: check training")
-                raise
+        try:
+            self.logger.info("Loading files")
+            self.user_lookup = pl.read_parquet(self.train_path / "user_lookup.parquet")
+            self.item_lookup = pl.read_parquet(self.train_path / "item_lookup.parquet")
+            self.isbn_map = pl.read_parquet(
+                self.train_path.parent / "isbn_work_map.parquet"
+            )
+            self.indices = torch.load(self.train_path / "indices.pt")
+            self.values = torch.load(self.train_path / "values.pt")
+            self.logger.info("Files loaded")
+            self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
 
-        # [TODO] check first make sure work id is properly used in training, then saved,,,,
-        else:
-            try:
-                train_df = pl.read_parquet(
-                    self.train_path
-                    / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
-                )
-                self.isbn_map = pl.read_parquet(
-                    self.train_path.parent / "isbn_work_map.parquet"
-                )
-
-                if not os.path.isfile(self.works_path):
-                    raise FileNotFoundError
-
-            except FileNotFoundError:
+        except FileNotFoundError:
+            self.logger.info("Training model.")
+            self.isbn_map = pl.read_parquet(
+                self.train_path.parent / "isbn_work_map.parquet"
+            )
+            train_df_path = (
+                self.train_path
+                / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+            )
+            if not os.path.isfile(train_df_path):
                 self.logger.info("Training dataframe not found, sampling dataframe.")
                 # isbn map is work ids to isbns
                 works_df, train_df = sample_works(self.num_samples, self.min_reviews)
@@ -153,49 +134,48 @@ class TorchEASE:
                     self.train_path
                     / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
                 )
-                self.isbn_map = pl.read_parquet(
-                    self.train_path / "../isbn_work_map.parquet"
-                )
                 works_df.write_parquet(self.works_path)
                 del works_df
 
                 self.logger.info("Training dataframe created and saved.")
-
-            self.user_lookup = self._generate_labels(train_df, self.user_col)
-            self.item_lookup = self._generate_labels(train_df, self.item_col)
-
-            self.item_map = {}
-            self.logger.info("Building item hashmap")
-            for row in self.item_lookup.rows():
-                _item, _item_id = row
-                self.item_map[_item_id] = _item
-
-            train_df = train_df.join(self.user_lookup, on=self.user_col)
-            train_df = train_df.join(self.item_lookup, on=self.item_col)
-            self.logger.info("User + item lookup complete")
-            self.indices = torch.LongTensor(
-                train_df[[self.user_id_col, self.item_id_col]].rows()
-            )
-
-            if self.score_col:
-                self.values = torch.FloatTensor(train_df[self.score_col])
-
             else:
-                # implicit values only
-                self.values = torch.ones(self.indices.shape[0])
+                train_df = pl.read_parquet(train_df_path)
 
-            del train_df
+        self.user_lookup = self._generate_labels(train_df, self.user_col)
+        self.item_lookup = self._generate_labels(train_df, self.item_col)
 
-            self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
-            self.logger.info("Sparse data built")
+        self.item_map = {}
+        self.logger.info("Building item hashmap")
+        for row in self.item_lookup.rows():
+            _item, _item_id = row
+            self.item_map[_item_id] = _item
 
-            # save all relevant data
-            self.user_lookup.write_parquet(self.train_path / "user_lookup.parquet")
-            self.item_lookup.write_parquet(self.train_path / "item_lookup.parquet")
-            torch.save(self.indices, self.train_path / "indices.pt")
-            torch.save(self.values, self.train_path / "values.pt")
-            self.logger.info("Data saved")
-            self.fit()
+        train_df = train_df.join(self.user_lookup, on=self.user_col)
+        train_df = train_df.join(self.item_lookup, on=self.item_col)
+        self.logger.info("User + item lookup complete")
+        self.indices = torch.LongTensor(
+            train_df[[self.user_id_col, self.item_id_col]].rows()
+        )
+
+        if self.score_col:
+            self.values = torch.FloatTensor(train_df[self.score_col])
+
+        else:
+            # implicit values only
+            self.values = torch.ones(self.indices.shape[0])
+
+        del train_df
+
+        self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
+        self.logger.info("Sparse data built")
+
+        # save all relevant data
+        self.user_lookup.write_parquet(self.train_path / "user_lookup.parquet")
+        self.item_lookup.write_parquet(self.train_path / "item_lookup.parquet")
+        torch.save(self.indices, self.train_path / "indices.pt")
+        torch.save(self.values, self.train_path / "values.pt")
+        self.logger.info("Data saved")
+        self.fit()
 
     def _generate_labels(self, df, col):
         dist_labels = df.unique([col], maintain_order=True)[[col]]
@@ -205,7 +185,6 @@ class TorchEASE:
 
         return dist_labels
 
-    # [TODO] work id should work now: check
     def fit(self, export: bool = True):
         self.logger.info("Building G Matrix")
         G = torch.sparse.mm(self.sparse.T, self.sparse)
@@ -223,7 +202,6 @@ class TorchEASE:
         if export:
             np.save(f"{self.train_path}/B{self.num_samples}.npy", B.numpy())
 
-    # [TODO] work id should work now: check
     def get_user_works(self, uname) -> pl.DataFrame:
         user_works_path = self.train_path.parent.parent / f"users/{uname}_works.parquet"
         user_book_path = self.train_path.parent.parent / f"users/{uname}.parquet"
@@ -271,7 +249,6 @@ class TorchEASE:
             user_df.write_parquet(BASE_DIR / f"data/users/{uname}_works.parquet")
             return user_df
 
-    # [TODO] work id should work now: check
     def pred_df_from_uname(self, uname):
         preds_path = self.preds_path / f"users/{uname}.parquet"
         if os.path.exists(preds_path):
@@ -282,7 +259,6 @@ class TorchEASE:
             pred_df.write_parquet(preds_path)
             return pred_df
 
-    # [TODO] check that work id works
     def pred(
         self,
         pred_df: pl.DataFrame,
@@ -414,7 +390,6 @@ class TorchEASE:
 
 if __name__ == "__main__":
     model = TorchEASE(
-        trained=TRAINED,
         num_samples=NUM_SAMPLES,
         min_reviews=MIN_REVIEWS,
         item_col=ITEM_COL,

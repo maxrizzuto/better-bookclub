@@ -133,5 +133,4 @@ def sample_works(
 
 
 if __name__ == "__main__":
-    # sample_books(300000, 2000)
     books_to_works()
