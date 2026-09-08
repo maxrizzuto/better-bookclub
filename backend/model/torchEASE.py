@@ -105,6 +105,11 @@ class TorchEASE:
         self.l2_reg = l2_reg
         self.score_col = score_col
 
+        train_df_path = (
+            self.train_path
+            / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
+        )
+
         try:
             self.logger.info("Loading files")
             self.user_lookup = pl.read_parquet(self.train_path / "user_lookup.parquet")
@@ -116,16 +121,14 @@ class TorchEASE:
             self.values = torch.load(self.train_path / "values.pt")
             self.logger.info("Files loaded")
             self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
+            train_df = pl.read_parquet(train_df_path)
 
         except FileNotFoundError:
             self.logger.info("Training model.")
             self.isbn_map = pl.read_parquet(
                 self.train_path.parent / "isbn_work_map.parquet"
             )
-            train_df_path = (
-                self.train_path
-                / f"goodreads_work_interactions_{self.num_samples}_{self.min_reviews}.parquet"
-            )
+
             if not os.path.isfile(train_df_path):
                 self.logger.info("Training dataframe not found, sampling dataframe.")
                 # isbn map is work ids to isbns
