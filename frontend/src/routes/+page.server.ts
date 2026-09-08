@@ -3,7 +3,7 @@ import { redirect, type Actions } from '@sveltejs/kit';
 type Book = {
 	title: string;
 	storygraph_id: string;
-	isbn: string;
+	isbn13: string;
 	shelf?: string;
 	rating?: number;
 };

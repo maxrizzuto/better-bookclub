@@ -12,7 +12,7 @@
 			<div class="book">
 				<p>{result.title}</p>
 				<p>{result.preds}</p>
-				<UserBook isbn={result.isbn13} />
+				<UserBook isbn13={result.isbn13} />
 			</div>
 		{/each}
 	</div>
@@ -25,7 +25,7 @@
 					{#each results as result}
 						<div class="book">
 							<p>{result.title}</p>
-							<UserBook isbn={result.isbn13} />
+							<UserBook isbn13={result.isbn13} />
 							<p>{result.preds}</p>
 							<p>{result.isbn}</p>
 						</div>

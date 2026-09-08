@@ -10,7 +10,7 @@
 	type Book = {
 		title: string;
 		storygraph_id: string;
-		isbn: string;
+		isbn13: string;
 		shelf?: string;
 		rating?: number;
 	};
@@ -50,6 +50,8 @@
 			eventSource?.close();
 			eventSource = null;
 		};
+
+		$inspect(userBooks);
 	}
 
 	// [TODO] function for add user, export serverside function that checks user (not form action)
@@ -95,7 +97,7 @@
 					<h1 class="username">{username}</h1>
 					<div class="user-books">
 						{#each books as book}
-							<UserBook isbn={book.isbn} />
+							<UserBook isbn13={book.isbn13} />
 						{/each}
 					</div>
 				</div>
@@ -117,8 +119,8 @@
 			display: flex;
 			justify-content: center;
 			width: 80vw;
-			margin: 4vh 10vw;
-			border-bottom: 1px solid black;
+			margin: 0 10vw;
+			border-bottom: 1px solid antiquewhite;
 			align-items: baseline;
 		}
 		.username {
@@ -138,7 +140,7 @@
 {:else}
 	<div id="page-container">
 		<div id="title-block">
-			<h1 id="title">want ideas for your next book club book?</h1>
+			<h1 id="title">Want ideas for your next book club book?</h1>
 		</div>
 
 		<div id="form">
@@ -162,12 +164,12 @@
 					<div class="submit-button">
 						{#if users.length < 2}
 							<button type="submit" id="submit" class="unsubmittable" onclick={checkSubmit}
-								>Submit</button
+								>&RightArrow;</button
 							>
 							<span class="tooltip">Must add at least 2 users to submit</span>
 						{:else}
 							<button type="submit" id="submit" class="submittable" onclick={checkSubmit}
-								>Submit</button
+								>&RightArrow;</button
 							>
 						{/if}
 					</div>
@@ -178,9 +180,10 @@
 						<div
 							class="user"
 							id={user}
-							animate:flip={{ duration: 400 }}
-							transition:fly={{ y: -5, duration: 400 }}
+
 						>
+						    <!-- animate:flip={{ duration: 400 }} -->
+						    <!-- transition:fly={{ y: -5, duration: 400 }} -->
 							<!-- [TODO] add validation icon if uname exists -->
 							<input type="hidden" name="user" value={user} />
 							<button class="removeUser" type="button" onclick={() => removeUser(user)}>-</button>
@@ -199,16 +202,15 @@
 			justify-content: center;
 			align-items: flex-end;
 			height: 35vh;
-			margin-bottom: 4vh;
-			margin-top: 5vh;
+			margin-top: 15vh;
 		}
 
 		#title {
-			font-weight: bold;
-			font-style: italic;
+		    font-weight: 100;
 			font-size: 5rem;
 			max-width: 70vw;
 			text-align: flex-start;
+			margin-bottom: 0;
 		}
 
 		/* FORM AND INPUTS */
@@ -218,10 +220,12 @@
 			justify-content: center;
 			align-items: center;
 			font-size: 1.25rem;
+			padding-top: 1vh;
+			margin-top: 1vh;
 		}
 
 		#inputError {
-			color: red;
+			color: white;
 			font-size: 0.75em;
 			margin: 10px 20px;
 			height: 0.75em;
@@ -230,17 +234,11 @@
 		input {
 			width: 50vw;
 			height: 75px;
-			border-radius: 20px;
 			font-size: 1em;
 			padding-left: 20px;
 			max-width: 1000px;
 			text-align: left;
-			border: 1px black solid;
-			font-family: monospace;
-		}
-
-		input:focus::placeholder {
-			color: transparent;
+			font-family: OCRA, sans-serif;
 		}
 
 		#addUser {
@@ -248,14 +246,12 @@
 			box-sizing: content-box;
 			height: 50px;
 			width: 50px;
-			margin-left: 5px;
+			margin-left: 10px;
 			font-size: 2em;
-			background-color: white;
-			border: 1px lightslategray solid;
-			color: darkslategray;
-			border-radius: 50%;
+			background-color: black;
+			color: antiquewhite;
 			padding: 0px;
-			transition: 200ms ease;
+			border: 1px solid antiquewhite;
 		}
 
 		#addUser:hover {
@@ -269,22 +265,22 @@
 
 		#submit {
 			display: inline-block;
-			border-radius: 50%;
 			height: 50px;
 			width: 50px;
-			margin-left: 5px;
-			background-color: white;
-			border: 1px solid lightslategray;
+			margin-left: 10px;
+			background-color: black;
+			border: 1px solid antiquewhite;
+			padding: 0;
+			font-size: 1.5em;
 		}
 
 		#submit.unsubmittable {
-			background-color: lightgray;
-			color: gray;
+			background-color: gray;
+			color: antiquewhite;
 		}
 
 		.tooltip {
 			font-size: 0.9em;
-			transition: 200ms ease-in-out;
 			visibility: hidden;
 			margin-left: 10px;
 		}
@@ -294,8 +290,8 @@
 		}
 
 		#submit.submittable {
-			transition: 200ms ease-in-out;
 			cursor: pointer;
+			color: antiquewhite;
 		}
 
 		#submit.submittable:hover {
@@ -305,7 +301,6 @@
 		.submit-button {
 			display: flex;
 			align-items: center;
-			max-width: 100px;
 		}
 
 		/* ADDED USERS */
@@ -321,7 +316,6 @@
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			transition: 200ms ease-in-out;
 		}
 
 		.removeUser:hover {
@@ -342,7 +336,8 @@
 			display: flex;
 			align-items: center;
 			padding: 20px 0px;
-			border-bottom: 1px gray solid;
+			border-bottom: 1px solid antiquewhite;
+			font-family: OCRA, sans-serif;
 		}
 
 		.user:last-of-type {
@@ -354,23 +349,6 @@
 
 <!-- global styles -->
 <style>
-	/* GLOBALS */
-	* {
-		font-family: 'Oranienbaum', 'Forum', serif;
-		box-sizing: border-box;
-	}
-
-	:global(body) {
-		min-height: 100vh;
-		background: #fcffc7;
-		background: linear-gradient(
-			137deg,
-			rgba(252, 255, 199, 1) 0%,
-			rgba(228, 199, 235, 1) 50%,
-			rgba(188, 224, 182, 1) 100%
-		);
-	}
-
 	/* OVERALL PAGE */
 	#page-container {
 		display: flex;
