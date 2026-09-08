@@ -143,7 +143,7 @@ class Storygraph:
 
     @staticmethod
     def stream_books(uname, cookie=COOKIE):
-        user_book_path = BASE_DIR / f"preds/users/{uname}.parquet"
+        user_book_path = BASE_DIR / f"data/users/{uname}_works.parquet"
         temp_book_path = f"{''.join(str(user_book_path).split('.')[:-1])}-temp.parquet"
         if os.path.exists(user_book_path):
             yield pl.read_parquet(user_book_path).to_dicts()

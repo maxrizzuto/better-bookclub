@@ -36,11 +36,21 @@ def books_to_works(
         pl.col("image_url").mode().first(),
     )
 
-    # join with books df to get work ids, then drop isbn13 and null work ids
+    # join with books df to get work ids, then drop null work ids
     int_df = int_df.join(
         books_df.select(("book_id", "work_id")), on="book_id", how="left"
     )
     int_df = int_df.drop_nulls("work_id")
+
+    # get most commonly reviewed ISBN for each work id
+    common_isbns = (
+        int_df.join(
+            books_df.select(("isbn13", "book_id", "work_id")), on="book_id", how="left"
+        )
+        .group_by("work_id")
+        .agg(pl.col("isbn13").mode().first())
+    )
+    common_isbns.write_parquet(BASE_DIR / "data/train/common_isbns_map.parquet")
 
     # write work dfs
     works_df.write_csv(BASE_DIR / "data/goodreads/goodreads_works.csv")

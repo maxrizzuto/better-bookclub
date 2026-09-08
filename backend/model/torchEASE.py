@@ -5,6 +5,12 @@ of the isbns, not the work aggregated together. It's not working at some point: 
 
 - Put predictions for users into folders based on the model parameters (e.g. there shouldn't be one
 Max prediction file, it should be model specific)
+
+- Some predictions include books from users' shelves (e.g. Rory has Franny and Zooey). Fix this later
+
+- Make it so preds df has ISBNs. Make separate mapping file of a work id's most commonly reviewed ISBN
+(this is for having an ISBN for fetching covers from openlibrary easily).
+CREATED: mapping work ids to most common isbns. now implement into preds
 """
 
 import logging
@@ -24,10 +30,10 @@ warnings.filterwarnings("ignore", ".*Sparse CSR tensor support is in beta state.
 
 # users who reviewed >= 20 books, all of which have at least 50 reviews
 BASE_DIR = Path(__file__).parent
-TRAINED = False
+TRAINED = True
 L2_LAMBDA = 500
 NUM_SAMPLES = 20000000
-MIN_REVIEWS = 200
+MIN_REVIEWS = 500
 GOODREADS_PATH = BASE_DIR / "storygraph.csv"
 B_PATH = BASE_DIR / f"data/train/{NUM_SAMPLES}_{MIN_REVIEWS}/B{NUM_SAMPLES}.npy"
 # EXPORT_ID_COL = "ISBN/UID"
@@ -96,6 +102,8 @@ class TorchEASE:
         self.preds_path = BASE_DIR / f"preds/{self.num_samples}_{self.min_reviews}"
         os.makedirs(self.train_path, exist_ok=True)
         os.makedirs(self.preds_path, exist_ok=True)
+        os.makedirs(self.preds_path / "users", exist_ok=True)
+        os.makedirs(self.preds_path / "groups", exist_ok=True)
         self.works_path = (
             self.train_path
             / f"goodreads_works_{self.num_samples}_{self.min_reviews}.parquet"
@@ -217,30 +225,24 @@ class TorchEASE:
 
     # [TODO] work id should work now: check
     def get_user_works(self, uname) -> pl.DataFrame:
-        user_works_path = BASE_DIR / f"data/users/{uname}_works.parquet"
-        user_book_path = BASE_DIR / f"data/users/{uname}.parquet"
+        user_works_path = self.train_path.parent.parent / f"users/{uname}_works.parquet"
+        user_book_path = self.train_path.parent.parent / f"users/{uname}.parquet"
         if os.path.exists(user_works_path):
             return pl.read_parquet(user_works_path)
         elif os.path.exists(user_book_path):
             user_df = pl.read_parquet(user_book_path)
+            isbn_col = [x for x in user_df.columns if "isbn" in x.lower()]
             if "work_id" in user_df.columns:
                 user_df.write_parquet(user_works_path)
                 return user_df
-            elif "isbn13" in user_df.columns:
-                user_df = (
-                    user_df.join(self.isbn_map, on="isbn13", how="left")
-                    .drop_nulls("work_id")
-                    .drop("isbn")
-                )
-                user_df.write_parquet(user_works_path)
-                return user_df
-            elif "isbn" in user_df.columns:
+            elif isbn_col:
+                isbn_col = isbn_col[0]
                 user_df = (
                     user_df.join(
-                        self.isbn_map, left_on="isbn", right_on="isbn13", how="left"
+                        self.isbn_map, left_on=isbn_col, right_on="isbn13", how="left"
                     )
                     .drop_nulls("work_id")
-                    .drop("isbn")
+                    .rename({isbn_col: "isbn13"})
                 )
                 user_df.write_parquet(user_works_path)
                 return user_df
@@ -264,7 +266,7 @@ class TorchEASE:
                     self.isbn_map, left_on="isbn", right_on="isbn13", how="left"
                 )
                 .drop_nulls("work_id")
-                .drop("isbn")
+                .rename({"isbn": "isbn13"})
             )
             user_df.write_parquet(BASE_DIR / f"data/users/{uname}_works.parquet")
             return user_df
@@ -358,6 +360,12 @@ class TorchEASE:
             .cast(pl.Enum(list(map(str, top_n_ids))))
         )
         works_df = works_df.with_columns(pl.Series("preds", pred_vals[0]))
+
+        # join with most common isbn
+        common_isbns = pl.read_parquet(
+            self.train_path.parent / "common_isbns_map.parquet"
+        )
+        works_df = works_df.join(common_isbns, on="work_id", how="left")
         self.logger.info("Predictions complete")
 
         return works_df
@@ -415,7 +423,6 @@ if __name__ == "__main__":
     )
 
     if PRED:
-        model.group_preds(UNAMES)
+        group_df = model.group_preds(UNAMES)
         max_df = model.pred_df_from_uname("mrizzuto")
         print(max_df)
-        max_df.write_csv(f"preds/preds_{L2_LAMBDA}l_{NUM_SAMPLES}.csv")

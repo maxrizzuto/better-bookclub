@@ -39,7 +39,6 @@ async def books(
         for username in user:
             for books in Storygraph.stream_books(username):
                 yield {"username": username, "books": books}
-
     yield {"data": "close"}
 
 
@@ -118,3 +117,22 @@ async def recs(
         return result
     else:
         return {"message": "no usernames"}
+
+
+"""
+[TODO]: Optimize this later so it's not always reading the map into memory.
+"""
+
+
+@app.get("/work_id")
+async def recs(
+    isbn: Annotated[
+        str | None, Query(description="ISBN13 to get the corresponding work id of.")
+    ] = None,
+):
+    isbn_map = pl.read_parquet(BASE_DIR / "model/data/train/isbn_work_map.parquet")
+    try:
+        work_id = isbn_map.filter(pl.col("isbn13") == isbn)["work_id"].item()
+        return work_id
+    except ValueError:
+        return None
