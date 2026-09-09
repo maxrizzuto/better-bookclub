@@ -51,7 +51,7 @@
 			eventSource = null;
 		};
 
-		$inspect(userBooks);
+		$inspect(users);
 	}
 
 	// [TODO] function for add user, export serverside function that checks user (not form action)
@@ -162,16 +162,10 @@
 					/>
 					<button type="button" id="addUser" onclick={addUser}>+</button>
 					<div class="submit-button">
-						{#if users.length < 2}
-							<button type="submit" id="submit" class="unsubmittable" onclick={checkSubmit}
-								>&RightArrow;</button
-							>
+							<button type="submit" id="submit" class:submittable={users.length >= 2} onclick={checkSubmit}>
+								&RightArrow;
+							</button>
 							<span class="tooltip">Must add at least 2 users to submit</span>
-						{:else}
-							<button type="submit" id="submit" class="submittable" onclick={checkSubmit}
-								>&RightArrow;</button
-							>
-						{/if}
 					</div>
 				</div>
 				<div id="inputError"></div>
@@ -202,7 +196,7 @@
 			justify-content: center;
 			align-items: flex-end;
 			height: 35vh;
-			margin-top: 15vh;
+			margin-top: 7.5vh;
 		}
 
 		#title {
@@ -217,11 +211,13 @@
 
 		#form {
 			display: flex;
-			justify-content: center;
+			justify-content: flex-start;
 			align-items: center;
 			font-size: 1.25rem;
 			padding-top: 1vh;
-			margin-top: 1vh;
+			margin-top: 3vh;
+			width: 70vw;
+			margin-left: 1vw;
 		}
 
 		#inputError {
@@ -233,12 +229,12 @@
 
 		input {
 			width: 50vw;
-			height: 75px;
 			font-size: 1em;
 			padding-left: 20px;
 			max-width: 1000px;
 			text-align: left;
 			font-family: OCRA, sans-serif;
+			height: 75px;
 		}
 
 		#addUser {
@@ -255,7 +251,7 @@
 		}
 
 		#addUser:hover {
-			background-color: lightgray;
+			background-color: gray;
 		}
 
 		.inputs {
@@ -268,15 +264,15 @@
 			height: 50px;
 			width: 50px;
 			margin-left: 10px;
-			background-color: black;
+			background-color: gray;
+			color: antiquewhite;
 			border: 1px solid antiquewhite;
 			padding: 0;
 			font-size: 1.5em;
 		}
 
-		#submit.unsubmittable {
-			background-color: gray;
-			color: antiquewhite;
+		#submit.submittable {
+		    background-color: black
 		}
 
 		.tooltip {
@@ -285,13 +281,12 @@
 			margin-left: 10px;
 		}
 
-		#submit.unsubmittable:hover + .tooltip {
+		#submit:hover + .tooltip {
 			visibility: visible;
 		}
 
-		#submit.submittable {
-			cursor: pointer;
-			color: antiquewhite;
+		#submit.submittable + .tooltip {
+		    visibility: hidden;
 		}
 
 		#submit.submittable:hover {
@@ -306,16 +301,17 @@
 		/* ADDED USERS */
 
 		.removeUser {
-			color: white;
-			background-color: lightcoral;
+			color: antiquewhite;
+			background-color: black;
 			font-size: 2em;
 			width: 1em;
 			height: 1em;
-			margin-right: 10px;
-			border-radius: 50%;
+			font-size: 1.5em;
+			margin-right: 20px;
 			display: flex;
 			align-items: center;
 			justify-content: center;
+			border: 1px solid antiquewhite;
 		}
 
 		.removeUser:hover {
@@ -324,20 +320,19 @@
 
 		#users {
 			display: flex;
-			padding-left: 20px;
-			width: 100%;
+			padding-left: 5px;
+			width: 90%;
 			flex-direction: column;
 			flex-wrap: wrap;
 		}
 
 		.user {
-			padding: 10px 5px;
 			flex: 1;
 			display: flex;
 			align-items: center;
-			padding: 20px 0px;
 			border-bottom: 1px solid antiquewhite;
 			font-family: OCRA, sans-serif;
+			font-size: 1.5em;
 		}
 
 		.user:last-of-type {

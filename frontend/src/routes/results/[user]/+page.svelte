@@ -37,23 +37,6 @@
 </div>
 
 <style>
-	/*GLOBALS*/
-	* {
-		font-family: 'Oranienbaum', 'Forum', serif;
-		box-sizing: border-box;
-	}
-
-	:global(body) {
-		min-height: 100vh;
-		background: #fcffc7;
-		background: linear-gradient(
-			137deg,
-			rgba(252, 255, 199, 1) 0%,
-			rgba(228, 199, 235, 1) 50%,
-			rgba(188, 224, 182, 1) 100%
-		);
-	}
-
 	#page-container {
 		display: flex;
 		flex-direction: column;
@@ -63,8 +46,7 @@
 
 	.page-title {
 		font-size: 2.5em;
-		font-weight: bold;
-		font-style: italic;
+		font-weight: 100;
 		margin-top: 5vh;
 		margin-bottom: 15px;
 	}
