@@ -82,7 +82,6 @@ class TorchEASE:
             stream=sys.stdout,
         )
         self.logger = logging.getLogger()
-        self.logger.info("Building user + item lookup")
 
         self.num_samples = num_samples
         self.min_reviews = min_reviews
@@ -90,9 +89,7 @@ class TorchEASE:
         self.user_col = user_col
         self.item_id_col = self.item_col + "_id"
         self.user_id_col = self.user_col + "_id"
-        self.train_path = (
-            BASE_DIR / f"data/train/{self.num_samples}_{self.min_reviews}/"
-        )
+        self.train_path = BASE_DIR / f"data/train/{self.num_samples}_{self.min_reviews}"
         self.preds_path = BASE_DIR / f"preds/{self.num_samples}_{self.min_reviews}"
         os.makedirs(self.train_path, exist_ok=True)
         os.makedirs(self.preds_path, exist_ok=True)
@@ -144,41 +141,41 @@ class TorchEASE:
             else:
                 train_df = pl.read_parquet(train_df_path)
 
-        self.user_lookup = self._generate_labels(train_df, self.user_col)
-        self.item_lookup = self._generate_labels(train_df, self.item_col)
+            self.user_lookup = self._generate_labels(train_df, self.user_col)
+            self.item_lookup = self._generate_labels(train_df, self.item_col)
 
-        self.item_map = {}
-        self.logger.info("Building item hashmap")
-        for row in self.item_lookup.rows():
-            _item, _item_id = row
-            self.item_map[_item_id] = _item
+            # self.item_map = {}
+            # self.logger.info("Building item hashmap")
+            # for row in self.item_lookup.rows():
+            #     _item, _item_id = row
+            #     self.item_map[_item_id] = _item
 
-        train_df = train_df.join(self.user_lookup, on=self.user_col)
-        train_df = train_df.join(self.item_lookup, on=self.item_col)
-        self.logger.info("User + item lookup complete")
-        self.indices = torch.LongTensor(
-            train_df[[self.user_id_col, self.item_id_col]].rows()
-        )
+            train_df = train_df.join(self.user_lookup, on=self.user_col)
+            train_df = train_df.join(self.item_lookup, on=self.item_col)
+            self.logger.info("User + item lookup complete")
+            self.indices = torch.LongTensor(
+                train_df[[self.user_id_col, self.item_id_col]].rows()
+            )
 
-        if self.score_col:
-            self.values = torch.FloatTensor(train_df[self.score_col])
+            if self.score_col:
+                self.values = torch.FloatTensor(train_df[self.score_col])
 
-        else:
-            # implicit values only
-            self.values = torch.ones(self.indices.shape[0])
+            else:
+                # implicit values only
+                self.values = torch.ones(self.indices.shape[0])
 
-        del train_df
+            del train_df
 
-        self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
-        self.logger.info("Sparse data built")
+            self.sparse = torch.sparse_coo_tensor(self.indices.t(), self.values)
+            self.logger.info("Sparse data built")
 
-        # save all relevant data
-        self.user_lookup.write_parquet(self.train_path / "user_lookup.parquet")
-        self.item_lookup.write_parquet(self.train_path / "item_lookup.parquet")
-        torch.save(self.indices, self.train_path / "indices.pt")
-        torch.save(self.values, self.train_path / "values.pt")
-        self.logger.info("Data saved")
-        self.fit()
+            # save all relevant data
+            self.user_lookup.write_parquet(self.train_path / "user_lookup.parquet")
+            self.item_lookup.write_parquet(self.train_path / "item_lookup.parquet")
+            torch.save(self.indices, self.train_path / "indices.pt")
+            torch.save(self.values, self.train_path / "values.pt")
+            self.logger.info("Data saved")
+            self.fit()
 
     def _generate_labels(self, df, col):
         dist_labels = df.unique([col], maintain_order=True)[[col]]
@@ -353,6 +350,7 @@ class TorchEASE:
         pred_df = pl.DataFrame()
         unames.sort()
         group_preds_path = self.preds_path / f"groups/{'_'.join(unames)}.parquet"
+        print(group_preds_path)
         if os.path.exists(group_preds_path):
             return pl.read_parquet(group_preds_path)
         for uname in unames:
