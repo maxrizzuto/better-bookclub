@@ -4,7 +4,6 @@ from typing import Annotated
 import polars as pl
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.sse import EventSourceResponse
 from model.scrapers.storygraph import Storygraph
 from model.torchEASE import TorchEASE
 
@@ -28,7 +27,7 @@ async def root():
     return {"message": "Hello World."}
 
 
-@app.get("/users", response_class=EventSourceResponse)
+@app.get("/users")
 async def books(
     user: Annotated[
         list[str] | None,
@@ -36,6 +35,7 @@ async def books(
     ],
 ):
     if user:
+        users = list()
         for username in user:
             try:
                 user_path = BASE_DIR / f"model/data/users/{username}_works.parquet"
@@ -61,18 +61,17 @@ async def books(
                 # do data for graph here later, seems too complicated to figure out now
 
                 books_list = (
-                    user_df[:12]
+                    df[:12]
                     .select("title", "work_id", "isbn13", "rating", "shelf")
                     .to_dicts()
                 )
-                return {
-                    "username": username,
-                    "books": books_list,
-                    "shelves": shelf_counts,
-                }
+                users.append(
+                    {"username": username, "books": books_list, "shelves": shelf_counts}
+                )
 
             except FileNotFoundError:
                 return {"username": username, "books": [], "shelves": {}}
+        return users
 
 
 @app.get("/recommendations")
