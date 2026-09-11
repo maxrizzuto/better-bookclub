@@ -1,3 +1,4 @@
+from ast import literal_eval
 from pathlib import Path
 
 import polars as pl
@@ -5,6 +6,7 @@ import polars as pl
 BASE_DIR = Path(__file__).parent
 BOOKS_PATH = BASE_DIR / "data/goodreads/goodreads_books.csv"
 WORKS_PATH = BASE_DIR / "data/goodreads/goodreads_works.csv"
+EDITIONS_PATH = BASE_DIR.parent / "data/ol_dump_editions_2026-08-31.txt"
 
 
 def books_to_works(
@@ -132,5 +134,33 @@ def sample_works(
     return (works_df, int_df)
 
 
+def cover_ids_from_editions(editions_path=EDITIONS_PATH):
+
+    common_isbns = pl.read_parquet(BASE_DIR / "data/train/common_isbns_map.parquet")
+    isbn_set = set(common_isbns["isbn13"].to_list())
+
+    # [cover id, isbn13]
+    data = list()
+    with open(editions_path, "r") as file:
+        i = 0
+        for line in file:
+            record_type, record_key, revision, last_modified, record = line.split("\t")
+            i += 1
+            if i % 50000 == 0:
+                print(i)
+            if "edition" in record_type:
+                try:
+                    record = literal_eval(record)
+                except ValueError:
+                    continue
+                if "isbn_13" in record.keys():
+                    isbn13 = record["isbn_13"]
+                    if isbn13 and isbn13[0] in isbn_set:
+                        olid = record_key.split("/")[-1]
+                        data.append([isbn13[0], olid])
+    df = pl.DataFrame(data, schema=["isbn13", "olid"], orient="row")
+    df.write_parquet(BASE_DIR / "data/train/cover_isbn_map.parquet")
+
+
 if __name__ == "__main__":
-    books_to_works()
+    cover_ids_from_editions()
