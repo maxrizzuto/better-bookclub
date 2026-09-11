@@ -90,8 +90,8 @@
 	}
 </script>
 
-{#if formSubmitted}
-	<div class="page-container">
+<div id="page-container">
+	{#if formSubmitted}
 		<div class="users-container">
 			{#if userData}
 				{#each Object.entries(userData) as [username, data]}
@@ -108,7 +108,15 @@
 						</div>
 						<div class="user-books">
 							{#each data.books as book}
-								<UserBook isbn13={book.isbn13} />
+								<div class="book-container">
+									<UserBook isbn13={book.isbn13} />
+									<div class="rating-container">
+										<div class="star-wrapper">
+											<div class="css-star"></div>
+										</div>
+										<span class="rating">{book.rating}</span>
+									</div>
+								</div>
 							{/each}
 						</div>
 					</div>
@@ -121,278 +129,391 @@
 				<input type="hidden" name="user" value={user} />
 			{/each}
 		</form>
-	</div>
 
-	<style>
-		a {
-			color: inherit;
-			text-decoration: none;
-		}
+		<style>
+			/* CONTAINERS */
 
-		button {
-			margin: 20px 0 0 10vw;
-			font-size: 2em;
-			background-color: antiquewhite;
-		}
+			.book-container {
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+			}
 
-		.users-container {
-			margin-top: 10vh;
-		}
+			.users-container {
+				margin: 10vh 5vw 5vh 5vw;
+				width: stretch;
+			}
 
-		.user-text {
-			height: 100%;
-			flex: 1;
-			display: flex;
-			flex-direction: column;
-			align-items: flex-start;
-			min-width: 250px;
-		}
+			button {
+				margin: 0 0 0 5vw;
+				font-size: 2em;
+				background-color: antiquewhite;
+			}
 
-		.user {
-			display: flex;
-			flex-direction: row;
-			justify-content: flex-start;
-			width: 80vw;
-			margin: 0 10vw;
-			border-bottom: 1px solid antiquewhite;
-		}
+			.shelves {
+				color: #b2c3e9;
+				font-size: 1.5em;
+			}
 
-		.username {
-			font-size: 4em;
-			font-weight: 100;
-			margin: 10px 75px 0 0;
-		}
+			.shelf {
+				margin: 5px 0;
+			}
 
-		.username:hover {
-			cursor: pointer;
-			text-decoration: underline;
-		}
+			/* USERS */
+			a {
+				color: inherit;
+				text-decoration: none;
+			}
 
-		.shelves {
-			color: #b2c3e9;
-			font-size: 1.5em;
-		}
+			.user-text {
+				height: 100%;
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				align-items: flex-start;
+				min-width: 250px;
+			}
 
-		.shelf {
-			margin: 5px 0;
-		}
+			.user {
+				display: flex;
+				flex-direction: row;
+				justify-content: flex-start;
+				border-bottom: 1px solid antiquewhite;
+			}
 
-		.user-books {
-			display: flex;
-			justify-content: flex-start;
-			align-items: baseline;
-			flex: 6;
-			flex-wrap: wrap;
-		}
-	</style>
-{:else}
-	<div id="page-container">
-		<div id="title-block">
-			<h1 id="title">Want ideas for your next book club book?</h1>
-		</div>
+			.username {
+				font-size: 4em;
+				font-weight: 100;
+				margin: 10px 75px 0 0;
+			}
 
-		<div id="form">
-			<form
-				method="GET"
-				name="unamesForm"
-				id="unamesForm"
-				onsubmit={(e) => {
-					e.preventDefault();
-					getUserBooks();
-				}}
-			>
-				<div class="inputs">
-					<input
-						type="text"
-						id="uname"
-						placeholder="add StoryGraph usernames here"
-						onkeydown={handleEnter}
-					/>
-					<button type="button" id="addUser" onclick={addUser}>+</button>
-					<div class="submit-button">
-						<button
-							type="submit"
-							id="submit"
-							class:submittable={users.length >= 2}
-							onclick={checkSubmit}
-						>
-							&RightArrow;
-						</button>
-						<span class="tooltip">Must add at least 2 users to submit</span>
-					</div>
-				</div>
-				<div id="inputError"></div>
-				<div id="users">
-					{#each users as user (user)}
-						<div class="user" id={user}>
-							<!-- animate:flip={{ duration: 400 }} -->
-							<!-- transition:fly={{ y: -5, duration: 400 }} -->
-							<!-- [TODO] add validation icon if uname exists -->
-							<input type="hidden" name="user" value={user} />
-							<button class="removeUser" type="button" onclick={() => removeUser(user)}>-</button>
-							<p>{user}</p>
+			.username:hover {
+				cursor: pointer;
+				text-decoration: underline;
+			}
+
+			.user-books {
+				display: flex;
+				justify-content: flex-start;
+				align-items: baseline;
+				flex: 6;
+				flex-wrap: wrap;
+			}
+
+			/*RATINGS*/
+			.rating-container {
+				display: flex;
+				flex-direction: row;
+				height: 40px;
+				width: 100%;
+				align-items: flex-end;
+				justify-content: flex-start;
+			}
+
+			.rating {
+				font-size: 2em;
+			}
+
+			.star-wrapper {
+				width: 40px;
+				height: 40px;
+				flex-shrink: 0;
+				margin-right: 2px;
+			}
+
+			.css-star {
+				box-shadow:
+					22px 10px 0 0 rgba(242, 191, 51, 1),
+					20px 12px 0 0 rgba(242, 191, 51, 1),
+					22px 12px 0 0 rgba(242, 191, 51, 1),
+					24px 12px 0 0 rgba(242, 191, 51, 1),
+					18px 14px 0 0 rgba(242, 191, 51, 1),
+					20px 14px 0 0 rgba(242, 191, 51, 1),
+					22px 14px 0 0 rgba(242, 191, 51, 1),
+					24px 14px 0 0 rgba(242, 191, 51, 1),
+					26px 14px 0 0 rgba(242, 191, 51, 1),
+					18px 16px 0 0 rgba(242, 191, 51, 1),
+					20px 16px 0 0 rgba(242, 191, 51, 1),
+					22px 16px 0 0 rgba(242, 191, 51, 1),
+					26px 16px 0 0 rgba(242, 191, 51, 1),
+					12px 18px 0 0 rgba(242, 191, 51, 1),
+					14px 18px 0 0 rgba(242, 191, 51, 1),
+					16px 18px 0 0 rgba(242, 191, 51, 1),
+					18px 18px 0 0 rgba(242, 191, 51, 1),
+					20px 18px 0 0 rgba(242, 191, 51, 1),
+					22px 18px 0 0 rgba(242, 191, 51, 1),
+					26px 18px 0 0 rgba(242, 191, 51, 1),
+					28px 18px 0 0 rgba(242, 191, 51, 1),
+					30px 18px 0 0 rgba(242, 191, 51, 1),
+					32px 18px 0 0 rgba(242, 191, 51, 1),
+					10px 20px 0 0 rgba(242, 191, 51, 1),
+					12px 20px 0 0 rgba(242, 191, 51, 1),
+					14px 20px 0 0 rgba(242, 191, 51, 1),
+					16px 20px 0 0 rgba(242, 191, 51, 1),
+					18px 20px 0 0 rgba(242, 191, 51, 1),
+					20px 20px 0 0 rgba(242, 191, 51, 1),
+					22px 20px 0 0 rgba(242, 191, 51, 1),
+					24px 20px 0 0 rgba(242, 191, 51, 1),
+					28px 20px 0 0 rgba(242, 191, 51, 1),
+					30px 20px 0 0 rgba(242, 191, 51, 1),
+					32px 20px 0 0 rgba(242, 191, 51, 1),
+					34px 20px 0 0 rgba(242, 191, 51, 1),
+					12px 22px 0 0 rgba(242, 191, 51, 1),
+					14px 22px 0 0 rgba(242, 191, 51, 1),
+					16px 22px 0 0 rgba(242, 191, 51, 1),
+					18px 22px 0 0 rgba(242, 191, 51, 1),
+					20px 22px 0 0 rgba(242, 191, 51, 1),
+					22px 22px 0 0 rgba(242, 191, 51, 1),
+					24px 22px 0 0 rgba(242, 191, 51, 1),
+					28px 22px 0 0 rgba(242, 191, 51, 1),
+					30px 22px 0 0 rgba(242, 191, 51, 1),
+					32px 22px 0 0 rgba(242, 191, 51, 1),
+					16px 24px 0 0 rgba(242, 191, 51, 1),
+					18px 24px 0 0 rgba(242, 191, 51, 1),
+					20px 24px 0 0 rgba(242, 191, 51, 1),
+					22px 24px 0 0 rgba(242, 191, 51, 1),
+					24px 24px 0 0 rgba(242, 191, 51, 1),
+					26px 24px 0 0 rgba(242, 191, 51, 1),
+					28px 24px 0 0 rgba(242, 191, 51, 1),
+					16px 26px 0 0 rgba(242, 191, 51, 1),
+					18px 26px 0 0 rgba(242, 191, 51, 1),
+					20px 26px 0 0 rgba(242, 191, 51, 1),
+					22px 26px 0 0 rgba(242, 191, 51, 1),
+					24px 26px 0 0 rgba(242, 191, 51, 1),
+					26px 26px 0 0 rgba(242, 191, 51, 1),
+					28px 26px 0 0 rgba(242, 191, 51, 1),
+					14px 28px 0 0 rgba(242, 191, 51, 1),
+					16px 28px 0 0 rgba(242, 191, 51, 1),
+					18px 28px 0 0 rgba(242, 191, 51, 1),
+					20px 28px 0 0 rgba(242, 191, 51, 1),
+					24px 28px 0 0 rgba(242, 191, 51, 1),
+					26px 28px 0 0 rgba(242, 191, 51, 1),
+					28px 28px 0 0 rgba(242, 191, 51, 1),
+					30px 28px 0 0 rgba(242, 191, 51, 1),
+					14px 30px 0 0 rgba(242, 191, 51, 1),
+					16px 30px 0 0 rgba(242, 191, 51, 1),
+					18px 30px 0 0 rgba(242, 191, 51, 1),
+					26px 30px 0 0 rgba(242, 191, 51, 1),
+					28px 30px 0 0 rgba(242, 191, 51, 1),
+					30px 30px 0 0 rgba(242, 191, 51, 1),
+					16px 32px 0 0 rgba(242, 191, 51, 1),
+					28px 32px 0 0 rgba(242, 191, 51, 1);
+				height: 2px;
+				width: 2px;
+			}
+		</style>
+	{:else}
+		<div class="content-container">
+			<div id="title-block">
+				<h1 id="title">Want ideas for your next book club book?</h1>
+			</div>
+
+			<div id="form">
+				<form
+					method="GET"
+					name="unamesForm"
+					id="unamesForm"
+					onsubmit={(e) => {
+						e.preventDefault();
+						getUserBooks();
+					}}
+				>
+					<div class="inputs">
+						<input
+							type="text"
+							id="uname"
+							placeholder="add StoryGraph usernames here"
+							onkeydown={handleEnter}
+						/>
+						<button type="button" id="addUser" onclick={addUser}>+</button>
+						<div class="submit-button">
+							<button
+								type="submit"
+								id="submit"
+								class:submittable={users.length >= 2}
+								onclick={checkSubmit}
+							>
+								&RightArrow;
+							</button>
+							<span class="tooltip">Must add at least 2 users to submit</span>
 						</div>
-					{/each}
-				</div>
-			</form>
+					</div>
+					<div id="inputError"></div>
+					<div id="users">
+						{#each users as user (user)}
+							<div class="user" id={user}>
+								<!-- animate:flip={{ duration: 400 }} -->
+								<!-- transition:fly={{ y: -5, duration: 400 }} -->
+								<!-- [TODO] add validation icon if uname exists -->
+								<input type="hidden" name="user" value={user} />
+								<button class="removeUser" type="button" onclick={() => removeUser(user)}>-</button>
+								<p>{user}</p>
+							</div>
+						{/each}
+					</div>
+				</form>
+			</div>
 		</div>
-	</div>
 
-	<style>
-		/* TITLE */
-		#title-block {
-			display: flex;
-			justify-content: center;
-			align-items: flex-end;
-			height: 35vh;
-			margin-top: 7.5vh;
-		}
+		<style>
+			.content-container {
+				margin: 15vh 10vw;
+			}
 
-		#title {
-			font-weight: 100;
-			font-size: 5rem;
-			max-width: 70vw;
-			text-align: flex-start;
-			margin-bottom: 0;
-		}
+			/* TITLE */
+			#title-block {
+				display: flex;
+				align-items: flex-end;
+				/*margin-left: 50vw;*/
+				align-self: flex-start;
+			}
 
-		/* FORM AND INPUTS */
+			#title {
+				font-weight: 100;
+				font-size: 5rem;
+				max-width: 70vw;
+				text-align: flex-start;
+				margin-bottom: 0;
+			}
 
-		#form {
-			display: flex;
-			justify-content: flex-start;
-			align-items: center;
-			font-size: 1.25rem;
-			padding-top: 1vh;
-			margin-top: 3vh;
-			width: 70vw;
-			margin-left: 1vw;
-		}
+			/* FORM AND INPUTS */
 
-		#inputError {
-			color: white;
-			font-size: 0.75em;
-			margin: 10px 20px;
-			height: 0.75em;
-		}
+			#form {
+				display: flex;
+				justify-content: flex-start;
+				align-items: center;
+				font-size: 1.25rem;
+				padding-top: 1vh;
+				margin-top: 3vh;
+				width: 70vw;
+				margin-left: 1vw;
+			}
 
-		input {
-			width: 50vw;
-			font-size: 1em;
-			padding-left: 20px;
-			max-width: 1000px;
-			text-align: left;
-			font-family: OCRA, sans-serif;
-			height: 75px;
-		}
+			#inputError {
+				color: white;
+				font-size: 0.75em;
+				margin: 10px 20px;
+				height: 0.75em;
+			}
 
-		#addUser {
-			display: inline-block;
-			box-sizing: content-box;
-			height: 50px;
-			width: 50px;
-			margin-left: 10px;
-			font-size: 2em;
-			background-color: black;
-			color: antiquewhite;
-			padding: 0px;
-			border: 1px solid antiquewhite;
-		}
+			input {
+				width: 50vw;
+				font-size: 1em;
+				padding-left: 20px;
+				max-width: 1000px;
+				text-align: left;
+				font-family: OCRA, sans-serif;
+				height: 75px;
+			}
 
-		#addUser:hover {
-			background-color: gray;
-			cursor: pointer;
-		}
+			#addUser {
+				display: inline-block;
+				box-sizing: content-box;
+				height: 50px;
+				width: 50px;
+				margin-left: 10px;
+				font-size: 2em;
+				background-color: black;
+				color: antiquewhite;
+				padding: 0px;
+				border: 1px solid antiquewhite;
+			}
 
-		.inputs {
-			display: flex;
-			align-items: center;
-		}
+			#addUser:hover {
+				background-color: gray;
+				cursor: pointer;
+			}
 
-		#submit {
-			display: inline-block;
-			height: 50px;
-			width: 50px;
-			margin-left: 10px;
-			background-color: gray;
-			color: antiquewhite;
-			border: 1px solid antiquewhite;
-			padding: 0;
-			font-size: 1.5em;
-		}
+			.inputs {
+				display: flex;
+				align-items: center;
+			}
 
-		#submit.submittable {
-			background-color: black;
-		}
+			#submit {
+				display: inline-block;
+				height: 50px;
+				width: 50px;
+				margin-left: 10px;
+				background-color: gray;
+				color: antiquewhite;
+				border: 1px solid antiquewhite;
+				padding: 0;
+				font-size: 1.5em;
+			}
 
-		.tooltip {
-			font-size: 0.9em;
-			visibility: hidden;
-			margin-left: 10px;
-		}
+			#submit.submittable {
+				background-color: black;
+			}
 
-		#submit:hover + .tooltip {
-			visibility: visible;
-		}
+			.tooltip {
+				font-size: 0.9em;
+				visibility: hidden;
+				margin-left: 10px;
+			}
 
-		#submit.submittable + .tooltip {
-			visibility: hidden;
-		}
+			#submit:hover + .tooltip {
+				visibility: visible;
+			}
 
-		#submit.submittable:hover {
-			background-color: darkseagreen;
-			cursor: pointer;
-		}
+			#submit.submittable + .tooltip {
+				visibility: hidden;
+			}
 
-		.submit-button {
-			display: flex;
-			align-items: center;
-		}
+			#submit.submittable:hover {
+				background-color: darkseagreen;
+				cursor: pointer;
+			}
 
-		/* ADDED USERS */
+			.submit-button {
+				display: flex;
+				align-items: center;
+			}
 
-		.removeUser {
-			color: antiquewhite;
-			background-color: black;
-			font-size: 2em;
-			width: 1em;
-			height: 1em;
-			font-size: 1.5em;
-			margin-right: 20px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			border: 1px solid antiquewhite;
-		}
+			/* ADDED USERS */
 
-		.removeUser:hover {
-			background-color: red;
-			cursor: pointer;
-		}
+			.removeUser {
+				color: antiquewhite;
+				background-color: black;
+				font-size: 2em;
+				width: 1em;
+				height: 1em;
+				font-size: 1.5em;
+				margin-right: 20px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border: 1px solid antiquewhite;
+			}
 
-		#users {
-			display: flex;
-			padding-left: 5px;
-			width: 90%;
-			flex-direction: column;
-			flex-wrap: wrap;
-		}
+			.removeUser:hover {
+				background-color: red;
+				cursor: pointer;
+			}
 
-		.user {
-			flex: 1;
-			display: flex;
-			align-items: center;
-			border-bottom: 1px solid antiquewhite;
-			font-family: OCRA, sans-serif;
-			font-size: 1.5em;
-		}
+			#users {
+				display: flex;
+				padding-left: 5px;
+				width: 90%;
+				flex-direction: column;
+				flex-wrap: wrap;
+			}
 
-		.user:last-of-type {
-			padding-bottom: 0;
-			border-bottom: none;
-		}
-	</style>
-{/if}
+			.user {
+				flex: 1;
+				display: flex;
+				align-items: center;
+				border-bottom: 1px solid antiquewhite;
+				font-family: OCRA, sans-serif;
+				font-size: 1.5em;
+			}
+
+			.user:last-of-type {
+				padding-bottom: 0;
+				border-bottom: none;
+			}
+		</style>
+	{/if}
+</div>
 
 <!-- global styles -->
 <style>
@@ -401,6 +522,6 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		padding: 0px 15vw;
+		padding: 15vh 10vw;
 	}
 </style>
