@@ -220,10 +220,7 @@ class TorchEASE:
                     pl.col("shelf").str.slice(0, 1).str.to_uppercase()
                     + pl.col("shelf").str.slice(1).str.replace_all("-", " ")
                 ).unique()
-            if "work_id" in user_df.columns:
-                user_df.write_parquet(user_works_path)
-                return user_df
-            elif isbn_col:
+            if "work_id" not in user_df.columns and isbn_col:
                 isbn_col = isbn_col[0]
                 user_df = (
                     user_df.join(
@@ -232,11 +229,12 @@ class TorchEASE:
                     .drop_nulls("work_id")
                     .rename({isbn_col: "isbn13"})
                 )
-                user_df.write_parquet(user_works_path)
-                return user_df
-            else:
-                self.logger.error("Error with user dataframes.")
-                raise FileNotFoundError
+            if isbn_col:
+                ol_df = pl.read_parquet(BASE_DIR / "data/train/cover_isbn_map.parquet")
+                user_df = user_df.join(ol_df, how="left", on="isbn13")
+
+            user_df.write_parquet(user_works_path)
+            return user_df
 
         else:
             self.logger.info("Fetching currently reading...")
@@ -411,4 +409,5 @@ if __name__ == "__main__":
     if PRED:
         group_df = model.group_preds(UNAMES)
         max_df = model.pred_df_from_uname("mrizzuto")
+        print(max_df)
         print(max_df)
