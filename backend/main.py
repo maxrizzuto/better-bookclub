@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Annotated
 
 import polars as pl
+import requests
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from model.scrapers.storygraph import Storygraph
@@ -71,7 +72,6 @@ async def books(
             except FileNotFoundError:
                 return {"username": username, "books": [], "shelves": {}}
 
-        print(users)
         return users
 
 
@@ -108,20 +108,26 @@ async def recs(
         return {"message": "no usernames"}
 
 
-"""
-[TODO]: Optimize this later so it's not always reading the map into memory.
-"""
-
-
-@app.get("/work_id")
-async def work_id(
-    isbn: Annotated[
-        str | None, Query(description="ISBN13 to get the corresponding work id of.")
+@app.get("/image_url")
+async def image_url(
+    id: Annotated[
+        str | None,
+        Query(description="Either ISBN or OLID to attempt to find cover id for."),
     ] = None,
 ):
-    isbn_map = pl.read_parquet(BASE_DIR / "model/data/train/isbn_work_map.parquet")
+    id_type = "isbn"
+    if "OL" in id:
+        id_type = "books"
     try:
-        work_id = isbn_map.filter(pl.col("isbn13") == isbn)["work_id"].item()
-        return work_id
-    except ValueError:
-        return None
+        response = requests.get(f"https://openlibrary.org/{id_type}/{id}.json")
+        data = response.json()
+        response = requests.get(
+            f"https://openlibrary.org{data['works'][0]['key']}.json"
+        )
+
+        data = response.json()
+        cover_url = f"https://covers.openlibrary.org/b/id/{data['covers'][0]}-L.jpg"
+        print(cover_url)
+        return {"url": cover_url}
+    except:
+        return {"url": f"https://covers.openlibrary.org/b/olid/null-S"}

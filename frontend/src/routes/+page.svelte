@@ -13,6 +13,7 @@
 		isbn13: string;
 		shelf?: string;
 		rating?: number;
+		olid?: string;
 	}>;
 
 	type ShelfStats = {
@@ -109,7 +110,11 @@
 						<div class="user-books">
 							{#each data.books as book}
 								<div class="book-container">
-									<UserBook isbn13={book.isbn13} />
+									{#if book.olid !== null}
+										<UserBook id={book.olid} />
+									{:else}
+										<UserBook id={book.isbn13} />
+									{/if}
 									<div class="rating-container">
 										<div class="star-wrapper">
 											<div class="css-star"></div>
@@ -135,12 +140,12 @@
 
 			.book-container {
 				display: flex;
-				flex-direction: row;
+				flex-direction: column;
 				align-items: center;
+				margin: 5px 20px;
 			}
 
 			.users-container {
-				margin: 10vh 5vw 5vh 5vw;
 				width: stretch;
 			}
 
