@@ -7,51 +7,52 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 
-	type Book = {
+	type Books = Array<{
 		title: string;
-		storygraph_id: string;
+		work_id: string;
 		isbn13: string;
 		shelf?: string;
 		rating?: number;
+	}>;
+
+	type ShelfStats = {
+		[key: string]: number;
 	};
 
-	type UserBooks = Record<string, Array<Book>>;
+	type UserData = Record<
+		string,
+		{
+			books: Books;
+			shelves: ShelfStats;
+		}
+	>;
+
+	// dict with username : {books: [], shelves: {}}
 
 	const users: string[] = $state([]);
-	const userBooks: UserBooks = $state({});
-	let { form }: PageProps = $props();
-	let eventSource: EventSource | null = null;
+	const userData: UserData = $state({});
+
 	let formSubmitted: boolean = $state(false);
 
-	function getUserBooks() {
+	async function getUserBooks() {
 		formSubmitted = true;
-		if (eventSource) return;
-
 		const query = users.map((uname) => `user=${uname}`).join('&');
-		eventSource = new EventSource(`http://127.0.0.1:8000/users?${query}`);
-
-		eventSource.onmessage = (event: MessageEvent) => {
-			const data = JSON.parse(event.data);
-			if (data.data === 'close') return;
-			console.log(data);
-			if (data.username in userBooks) {
-				userBooks[data.username].push(...data.books);
+		const response = await fetch(`http://127.0.0.1:8000/users?${query}`);
+		const data = await response.json();
+		for (var user of data) {
+			if (user.username in userData) {
+				userData[user.username].books.push(...user.books);
+				userData[user.username].shelves = {
+					...userData[user.username].shelves,
+					...user.shelves
+				};
 			} else {
-				userBooks[data.username] = data.books;
+				userData[user.username] = {
+					books: user.books,
+					shelves: user.shelves
+				};
 			}
-		};
-
-		eventSource.addEventListener('close', () => {
-			eventSource?.close();
-			eventSource = null;
-		});
-
-		eventSource.onerror = () => {
-			eventSource?.close();
-			eventSource = null;
-		};
-
-		$inspect(users);
+		}
 	}
 
 	// [TODO] function for add user, export serverside function that checks user (not form action)
@@ -90,50 +91,97 @@
 </script>
 
 {#if formSubmitted}
-	<div class="users-container">
-		{#if userBooks}
-			{#each Object.entries(userBooks) as [username, books]}
-				<div class="user">
-					<h1 class="username">{username}</h1>
-					<div class="user-books">
-						{#each books as book}
-							<UserBook isbn13={book.isbn13} />
-						{/each}
+	<div class="page-container">
+		<div class="users-container">
+			{#if userData}
+				{#each Object.entries(userData) as [username, data]}
+					<div class="user">
+						<div class="user-text">
+							<h1 class="username">
+								<a href="https://app.thestorygraph.com/profile/{username}">{username}</a>
+							</h1>
+							<div class="shelves">
+								{#each Object.entries(data.shelves) as [shelf, number]}
+									<p class="shelf"><b>{number}</b> {shelf.toLowerCase()}</p>
+								{/each}
+							</div>
+						</div>
+						<div class="user-books">
+							{#each data.books as book}
+								<UserBook isbn13={book.isbn13} />
+							{/each}
+						</div>
 					</div>
-				</div>
+				{/each}
+			{/if}
+		</div>
+		<form method="POST" action="?/getRecs">
+			<button type="submit">Get recs &RightArrow;</button>
+			{#each users as user (user)}
+				<input type="hidden" name="user" value={user} />
 			{/each}
-		{/if}
+		</form>
 	</div>
-	<form method="POST" action="?/getRecs">
-		<button type="submit">Get recs</button>
-		{#each users as user (user)}
-			<input type="hidden" name="user" value={user} />
-		{/each}
-	</form>
 
 	<style>
+		a {
+			color: inherit;
+			text-decoration: none;
+		}
+
+		button {
+			margin: 20px 0 0 10vw;
+			font-size: 2em;
+			background-color: antiquewhite;
+		}
+
 		.users-container {
 			margin-top: 10vh;
 		}
+
+		.user-text {
+			height: 100%;
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			align-items: flex-start;
+			min-width: 250px;
+		}
+
 		.user {
 			display: flex;
-			justify-content: center;
+			flex-direction: row;
+			justify-content: flex-start;
 			width: 80vw;
 			margin: 0 10vw;
 			border-bottom: 1px solid antiquewhite;
-			align-items: baseline;
 		}
+
 		.username {
-			justify-self: center;
-			font-style: italic;
-			font-size: 2em;
+			font-size: 4em;
+			font-weight: 100;
+			margin: 10px 75px 0 0;
+		}
+
+		.username:hover {
+			cursor: pointer;
+			text-decoration: underline;
+		}
+
+		.shelves {
+			color: #b2c3e9;
+			font-size: 1.5em;
+		}
+
+		.shelf {
+			margin: 5px 0;
 		}
 
 		.user-books {
 			display: flex;
 			justify-content: flex-start;
 			align-items: baseline;
-			flex: 1;
+			flex: 6;
 			flex-wrap: wrap;
 		}
 	</style>
@@ -162,22 +210,23 @@
 					/>
 					<button type="button" id="addUser" onclick={addUser}>+</button>
 					<div class="submit-button">
-							<button type="submit" id="submit" class:submittable={users.length >= 2} onclick={checkSubmit}>
-								&RightArrow;
-							</button>
-							<span class="tooltip">Must add at least 2 users to submit</span>
+						<button
+							type="submit"
+							id="submit"
+							class:submittable={users.length >= 2}
+							onclick={checkSubmit}
+						>
+							&RightArrow;
+						</button>
+						<span class="tooltip">Must add at least 2 users to submit</span>
 					</div>
 				</div>
 				<div id="inputError"></div>
 				<div id="users">
 					{#each users as user (user)}
-						<div
-							class="user"
-							id={user}
-
-						>
-						    <!-- animate:flip={{ duration: 400 }} -->
-						    <!-- transition:fly={{ y: -5, duration: 400 }} -->
+						<div class="user" id={user}>
+							<!-- animate:flip={{ duration: 400 }} -->
+							<!-- transition:fly={{ y: -5, duration: 400 }} -->
 							<!-- [TODO] add validation icon if uname exists -->
 							<input type="hidden" name="user" value={user} />
 							<button class="removeUser" type="button" onclick={() => removeUser(user)}>-</button>
@@ -200,7 +249,7 @@
 		}
 
 		#title {
-		    font-weight: 100;
+			font-weight: 100;
 			font-size: 5rem;
 			max-width: 70vw;
 			text-align: flex-start;
@@ -252,6 +301,7 @@
 
 		#addUser:hover {
 			background-color: gray;
+			cursor: pointer;
 		}
 
 		.inputs {
@@ -272,7 +322,7 @@
 		}
 
 		#submit.submittable {
-		    background-color: black
+			background-color: black;
 		}
 
 		.tooltip {
@@ -286,11 +336,12 @@
 		}
 
 		#submit.submittable + .tooltip {
-		    visibility: hidden;
+			visibility: hidden;
 		}
 
 		#submit.submittable:hover {
 			background-color: darkseagreen;
+			cursor: pointer;
 		}
 
 		.submit-button {
@@ -316,6 +367,7 @@
 
 		.removeUser:hover {
 			background-color: red;
+			cursor: pointer;
 		}
 
 		#users {

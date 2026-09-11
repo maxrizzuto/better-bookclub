@@ -4,7 +4,6 @@ from typing import Annotated
 import polars as pl
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.sse import EventSourceResponse
 from model.scrapers.storygraph import Storygraph
 from model.torchEASE import TorchEASE
 
@@ -28,7 +27,7 @@ async def root():
     return {"message": "Hello World."}
 
 
-@app.get("/users", response_class=EventSourceResponse)
+@app.get("/users")
 async def books(
     user: Annotated[
         list[str] | None,
@@ -36,54 +35,43 @@ async def books(
     ],
 ):
     if user:
+        users = list()
         for username in user:
-            for books in Storygraph.stream_books(username):
-                yield {"username": username, "books": books}
-    yield {"data": "close"}
+            try:
+                user_path = BASE_DIR / f"model/data/users/{username}_works.parquet"
+                df = pl.read_parquet(user_path)
+                if "last date read" in df.columns:
+                    df = df.sort(
+                        ["rating", "last date read"],
+                        descending=[True, True],
+                        nulls_last=True,
+                    )
+                else:
+                    df = df.sort("rating", descending=True, nulls_last=True)
 
+                shelf_counts = df["shelf"].value_counts()
+                shelf_counts = {
+                    k: v
+                    for k, v in dict(
+                        zip(shelf_counts["shelf"], shelf_counts["count"])
+                    ).items()
+                    if k in ["Read", "To read", "Currently reading"]
+                }
 
-# def start_stream_books(username: str):
-#     Storygraph.stream_books(username)
-#     user_path = BASE_DIR / f"model/preds/users/{username}.parquet"
-#     temp_path = BASE_DIR / f"model/preds/users/{username}-temp.parquet"
-#     try:
-#         user_df = pl.read_parquet(temp_path)
-#         user_df = user_df.unique("isbn")
-#         user_df.write_parquet(user_path)
-#         os.remove(temp_path)
-#     except FileNotFoundError:
-#         return
+                # do data for graph here later, seems too complicated to figure out now
 
+                books_list = (
+                    df[:12]
+                    .select("title", "work_id", "isbn13", "rating", "shelf")
+                    .to_dicts()
+                )
+                users.append(
+                    {"username": username, "books": books_list, "shelves": shelf_counts}
+                )
 
-# @app.get("/users")
-# async def books(
-#     background_tasks: BackgroundTasks,
-#     user: Annotated[
-#         list[str] | None,
-#         Query(description="List of users to get books for from Storygraph."),
-#     ] = None,
-# ):
-#     if user:
-#         dct = dict()
-#         dct["status"] = "complete"
-#         dct["userBooks"] = {}
-#         for username in user:
-#             user_path = BASE_DIR / f"model/preds/users/{username}.parquet"
-#             temp_path = BASE_DIR / f"model/preds/users/{username}-temp.parquet"
-#             if os.path.exists(user_path):
-#                 dct["userBooks"][username] = pl.read_parquet(user_path).to_dicts()
-#             elif os.path.exists(temp_path):
-#                 dct["userBooks"][username] = pl.read_parquet(temp_path).to_dicts()
-#                 dct["status"] = "in progress"
-#             else:
-#                 background_tasks.add_task(start_stream_books, username)
-#                 dct["status"] = "in progress"
-#                 pl.DataFrame().write_parquet(temp_path)
-#         print(dct["status"])
-#         return dct
-
-#     else:
-#         return {"status": "No usernames input."}
+            except FileNotFoundError:
+                return {"username": username, "books": [], "shelves": {}}
+        return users
 
 
 @app.get("/recommendations")
@@ -125,7 +113,7 @@ async def recs(
 
 
 @app.get("/work_id")
-async def recs(
+async def work_id(
     isbn: Annotated[
         str | None, Query(description="ISBN13 to get the corresponding work id of.")
     ] = None,
