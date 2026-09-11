@@ -209,7 +209,17 @@ class TorchEASE:
             return pl.read_parquet(user_works_path)
         elif os.path.exists(user_book_path):
             user_df = pl.read_parquet(user_book_path)
-            isbn_col = [x for x in user_df.columns if "isbn" in x.lower()]
+            user_df = user_df.rename({col: col.lower() for col in user_df.columns})
+            isbn_col = [x for x in user_df.columns if "isbn" in x]
+            rating_col = [x for x in user_df.columns if "rating" in x]
+            if rating_col:
+                user_df = user_df.rename({rating_col[0]: "rating"})
+            if "read status" in user_df.columns:
+                user_df = user_df.rename({"read status": "shelf"})
+                user_df = user_df.with_columns(
+                    pl.col("shelf").str.slice(0, 1).str.to_uppercase()
+                    + pl.col("shelf").str.slice(1).str.replace_all("-", " ")
+                ).unique()
             if "work_id" in user_df.columns:
                 user_df.write_parquet(user_works_path)
                 return user_df
