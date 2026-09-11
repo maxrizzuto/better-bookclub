@@ -229,10 +229,15 @@ class TorchEASE:
                     .drop_nulls("work_id")
                     .rename({isbn_col: "isbn13"})
                 )
+
+            # drop duplicate work ids, prioritizing non-nulls
             if isbn_col:
                 ol_df = pl.read_parquet(BASE_DIR / "data/train/cover_isbn_map.parquet")
                 user_df = user_df.join(ol_df, how="left", on="isbn13")
 
+            user_df = user_df.sort("rating", nulls_last=True).unique(
+                subset="work_id", keep="first", maintain_order=True
+            )
             user_df.write_parquet(user_works_path)
             return user_df
 
@@ -409,5 +414,4 @@ if __name__ == "__main__":
     if PRED:
         group_df = model.group_preds(UNAMES)
         max_df = model.pred_df_from_uname("mrizzuto")
-        print(max_df)
         print(max_df)

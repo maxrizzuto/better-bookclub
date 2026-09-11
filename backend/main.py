@@ -59,10 +59,9 @@ async def books(
                 }
 
                 # do data for graph here later, seems too complicated to figure out now
-
                 books_list = (
                     df[:12]
-                    .select("title", "work_id", "isbn13", "rating", "shelf")
+                    .select("title", "work_id", "isbn13", "rating", "shelf", "olid")
                     .to_dicts()
                 )
                 users.append(
@@ -71,6 +70,8 @@ async def books(
 
             except FileNotFoundError:
                 return {"username": username, "books": [], "shelves": {}}
+
+        print(users)
         return users
 
 
