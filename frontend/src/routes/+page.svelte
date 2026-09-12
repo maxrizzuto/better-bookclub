@@ -155,6 +155,10 @@
 				background-color: antiquewhite;
 			}
 
+			button:hover {
+				cursor: pointer;
+			}
+
 			.shelves {
 				color: #b2c3e9;
 				font-size: 1.5em;
@@ -362,7 +366,7 @@
 
 		<style>
 			.content-container {
-				margin: 15vh 10vw;
+				margin: 7.5vh 10vw;
 			}
 
 			/* TITLE */
@@ -527,6 +531,6 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		padding: 15vh 10vw;
+		padding: 7.5vh 7.5vw;
 	}
 </style>

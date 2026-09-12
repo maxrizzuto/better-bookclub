@@ -10,9 +10,15 @@
 	<div class="results">
 		{#each data.group_results as result}
 			<div class="book">
-				<p>{result.title}</p>
-				<p>{result.preds}</p>
-				<UserBook isbn13={result.isbn13} />
+				{#if result.olid !== null}
+					<UserBook id={result.olid} />
+				{:else}
+					<UserBook id={result.isbn13} />
+				{/if}
+				<div class="book-text">
+					<span class="rating">{Math.round(result.preds * 100)}%</span>
+					<span class="title">{result.title}</span>
+				</div>
 			</div>
 		{/each}
 	</div>
@@ -24,10 +30,15 @@
 				<div class="results">
 					{#each results as result}
 						<div class="book">
-							<p>{result.title}</p>
-							<UserBook isbn13={result.isbn13} />
-							<p>{result.preds}</p>
-							<p>{result.isbn}</p>
+							{#if result.olid != null}
+								<UserBook id={result.olid} />
+							{:else}
+								<UserBook id={result.isbn13} />
+							{/if}
+							<div class="book-text">
+								<span class="rating">{Math.round(result.preds * 100)}%</span>
+								<span class="title">{result.title}</span>
+							</div>
 						</div>
 					{/each}
 				</div>
@@ -54,7 +65,7 @@
 	/* RESULTS */
 	.results {
 		display: flex;
-		max-width: 50px;
+		flex-wrap: wrap;
 	}
 	h2 {
 		font-size: 2em;
@@ -67,12 +78,19 @@
 		margin-bottom: 10px;
 	}
 
-	.user-container {
-		margin-left: 20px;
-	}
-
 	.book {
 		margin: 0 15px;
-		width: 100px;
+		display: flex;
+		flex-direction: column;
+		width: 140px;
+		/*width: 75px;*/
+	}
+
+	.book-text {
+		margin-bottom: 20px;
+	}
+
+	.rating {
+		color: #b2c3e9;
 	}
 </style>

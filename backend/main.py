@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 import polars as pl
 import requests
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from model.scrapers.storygraph import Storygraph
 from model.torchEASE import TorchEASE
 
 BASE_DIR = Path(__file__).parent
@@ -84,26 +84,34 @@ async def recs(
     if user:
         model = TorchEASE()
 
-        # [TODO] update to cloud storage url
-        pred_df = model.group_preds(user)
+        result = {"usernames": user, "user_results": {}, "group_results": []}
+        group_works = []
 
-        result = {}
-        result["usernames"] = user
+        for username in user:
+            user_works = list(model.get_user_works(username)["work_id"])
+            group_works += user_works
+            user_results = (
+                model.pred_df_from_uname(username)
+                .filter(~pl.col("work_id").is_in(user_works))
+                .with_columns(preds=pl.col("preds") / pl.col("preds").max())
+                .with_columns(preds=pl.col("preds").round(3))[:12]
+            ).to_dicts()
+            result["user_results"][username] = user_results[:12]
+
+        group_works = set(group_works)
+
+        # [TODO] update to cloud storage url
+        pred_df = model.group_preds(user).filter(~pl.col("work_id").is_in(group_works))
+
         group_results = (
             pred_df.with_columns(
                 preds=pl.col("preds") / pl.col("preds").max()
-            ).with_columns(preds=pl.col("preds").round(3))[:10]
+            ).with_columns(preds=pl.col("preds").round(3))[:12]
         ).to_dicts()
         result["group_results"] = group_results
-        result["user_results"] = {}
-        for username in user:
-            user_results = (
-                model.pred_df_from_uname(username)
-                .with_columns(preds=pl.col("preds") / pl.col("preds").max())
-                .with_columns(preds=pl.col("preds").round(3))[:10]
-            ).to_dicts()
-            result["user_results"][username] = user_results[:10]
+        print(result)
         return result
+
     else:
         return {"message": "no usernames"}
 
@@ -111,23 +119,24 @@ async def recs(
 @app.get("/image_url")
 async def image_url(
     id: Annotated[
-        str | None,
+        str,
         Query(description="Either ISBN or OLID to attempt to find cover id for."),
-    ] = None,
+    ],
 ):
     id_type = "isbn"
     if "OL" in id:
         id_type = "books"
     try:
-        response = requests.get(f"https://openlibrary.org/{id_type}/{id}.json")
-        data = response.json()
-        response = requests.get(
-            f"https://openlibrary.org{data['works'][0]['key']}.json"
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://openlibrary.org/{id_type}/{id}.json")
+            data = response.json()
+            response = await client.get(
+                f"https://openlibrary.org{data['works'][0]['key']}.json"
+            )
 
         data = response.json()
         cover_url = f"https://covers.openlibrary.org/b/id/{data['covers'][0]}-L.jpg"
         print(cover_url)
         return {"url": cover_url}
     except:
-        return {"url": f"https://covers.openlibrary.org/b/olid/null-S"}
+        return {"url": "https://covers.openlibrary.org/b/olid/null-S"}

@@ -5,7 +5,8 @@ type Book = {
 	storygraph_id: string;
 	isbn13: string;
 	shelf?: string;
-	rating?: number;
+  rating?: number;
+  olid?: string;
 };
 
 type BookList = Array<Book>;

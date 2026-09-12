@@ -1,20 +1,18 @@
 import type { PageLoad, PageProps } from './$types';
 
 type Book = {
-	isbn: string;
-	asin?: string;
-	url: string;
-	isbn13: string;
-	image_url: string;
-	book_id: number;
 	work_id: number;
-	title: string;
+  isbn13: string;
+  title: string;
+  olid?: string;
+	url?: string;
+	image_url?: string;
 	ratings_count: number;
 	preds: number;
 };
 
 type Recs = {
-	usernames: Array<string>;
+  usernames: Array<string>;
 	group_results: Array<Book>;
 	user_results: Record<string, Array<Book>>;
 };

@@ -232,7 +232,9 @@ class TorchEASE:
 
             # drop duplicate work ids, prioritizing non-nulls
             if isbn_col:
-                ol_df = pl.read_parquet(BASE_DIR / "data/train/cover_isbn_map.parquet")
+                ol_df = pl.read_csv(
+                    BASE_DIR / "data/goodreads/goodreads_works.csv"
+                ).select(("isbn13", "olid"))
                 user_df = user_df.join(ol_df, how="left", on="isbn13")
 
             user_df = user_df.sort("rating", nulls_last=True).unique(
@@ -268,7 +270,7 @@ class TorchEASE:
             return pl.read_parquet(preds_path)
         else:
             user_df = self.get_user_works(uname)
-            pred_df = model.pred(user_df, "work_id", n=None)
+            pred_df = self.pred(user_df, "work_id", n=None)
             pred_df.write_parquet(preds_path)
             return pred_df
 
@@ -336,7 +338,7 @@ class TorchEASE:
             top_n_idx = top_n_idx[:n]
         pred_vals = preds[:, top_n_idx]
         top_n_ids = [
-            model.item_lookup.filter(pl.col(self.item_id_col) == x.item())[
+            self.item_lookup.filter(pl.col(self.item_id_col) == x.item())[
                 self.item_col
             ].item()
             for x in top_n_idx

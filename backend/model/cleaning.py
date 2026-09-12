@@ -1,3 +1,4 @@
+import time
 from ast import literal_eval
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def books_to_works(
     """
     Function to run to convert Goodreads books training datasets into works.
     """
-    int_df = pl.read_csv(int_path)
+    int_df = pl.read_csv(int_path, infer_schema=False)
     int_df = int_df.filter(pl.col("is_read") == 1)
     books_df = pl.read_csv(books_path)
     isbn_map = books_df.select(["work_id", "isbn13"]).unique("isbn13")
@@ -36,18 +37,20 @@ def books_to_works(
         pl.col("title").mode().first(),
         pl.col("ratings_count").sum(),
         pl.col("image_url").mode().first(),
+        pl.col("isbn13").mode().first(),
     )
+    works_df = add_olids(works_df)
 
     # join with books df to get work ids, then drop null work ids
     int_df = int_df.join(
-        books_df.select(("book_id", "work_id")), on="book_id", how="left"
+        books_df.select(("book_id", "work_id", "isbn13")), on="book_id", how="left"
     )
     int_df = int_df.drop_nulls("work_id")
 
     # get most commonly reviewed ISBN for each work id
     common_isbns = (
         int_df.join(
-            books_df.select(("isbn13", "book_id", "work_id")), on="book_id", how="left"
+            books_df.select(("isbn13", "book_id", "work_id")), on="isbn13", how="left"
         )
         .group_by("work_id")
         .agg(pl.col("isbn13").mode().first())
@@ -135,7 +138,6 @@ def sample_works(
 
 
 def cover_ids_from_editions(editions_path=EDITIONS_PATH):
-
     common_isbns = pl.read_parquet(BASE_DIR / "data/train/common_isbns_map.parquet")
     isbn_set = set(common_isbns["isbn13"].to_list())
 
@@ -162,5 +164,48 @@ def cover_ids_from_editions(editions_path=EDITIONS_PATH):
     df.write_parquet(BASE_DIR / "data/train/cover_isbn_map.parquet")
 
 
+def add_olids(works_df):
+    print("started loading")
+    start = time.time()
+    df = pl.read_csv(
+        EDITIONS_PATH,
+        separator="\t",
+        has_header=False,
+        new_columns=[
+            "record_type",
+            "record_key",
+            "record",
+        ],
+        ignore_errors=True,
+        infer_schema=False,
+        columns=[0, 1, 4],  # Only load record_type, record_key, and record into RAM
+    )
+    end = time.time()
+    print(f"finished loading in {round(end - start, 3)} seconds")
+
+    df = df.filter(pl.col("record_type") == "/type/edition")
+    df = df.with_columns(
+        isbn13=pl.col("record").str.json_path_match("$.isbn_13[0]"),
+        olid=pl.col("record_key").str.split("/").list.last(),
+    )
+    df = df.filter(pl.col("record_type").str.contains("edition"))
+    df = df.drop(["record_type", "record_key", "record"])
+
+    works_df = (
+        works_df.join(df, how="left", on="isbn13")
+        .group_by("work_id")
+        .agg(
+            pl.col("title").mode().first(),
+            pl.col("ratings_count").sum(),
+            pl.col("image_url").mode().first(),
+            pl.col("isbn13").mode().first(),
+            pl.col("olid").mode().first(),
+        )
+    )
+    works_df.write_csv(BASE_DIR / "data/goodreads/goodreads_works.csv")
+
+
 if __name__ == "__main__":
-    cover_ids_from_editions()
+    # books_to_works()
+    works_df = pl.read_csv(WORKS_PATH)
+    add_olids(works_df)
